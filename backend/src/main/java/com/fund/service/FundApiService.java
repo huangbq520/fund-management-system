@@ -312,8 +312,15 @@ public class FundApiService {
             }
             
             // 从HTML内容中提取表格数据
+            // <table class='w782 comm tzxq'> 使用单引号
             Pattern tablePattern = Pattern.compile("<table[^>]*class=\"[^\"]*tzxq[^\"]*\"[^>]*>(.*?)</table>", Pattern.DOTALL);
             Matcher tableMatcher = tablePattern.matcher(htmlContent);
+            
+            if (!tableMatcher.find()) {
+                // 尝试使用单引号
+                tablePattern = Pattern.compile("<table[^>]*class='[^']*tzxq[^']*'[^>]*>(.*?)</table>", Pattern.DOTALL);
+                tableMatcher = tablePattern.matcher(htmlContent);
+            }
             
             if (tableMatcher.find()) {
                 String tableContent = tableMatcher.group(1);
@@ -382,14 +389,20 @@ public class FundApiService {
         }
         
         try {
-            // 匹配 var apidata={ content:"...", ... }
-            Pattern pattern = Pattern.compile("var\\s+apidata\\s*=\\s*\\{[^}]*content\\s*:\\s*\"([^\"]*)\"", Pattern.DOTALL);
+            // 匹配 var apidata={ content:"...", ... } 或 content:'...'
+            // 处理双引号和单引号
+            Pattern pattern = Pattern.compile("var\\s+apidata\\s*=\\s*\\{[^}]*content\\s*:\\s*[\"']([^\"']*)[\"']", Pattern.DOTALL);
             Matcher matcher = pattern.matcher(response);
             
             if (matcher.find()) {
                 String content = matcher.group(1);
                 // 处理转义字符
                 content = content.replace("\\\"", "\"")
+                                .replace("\\'", "'")
+                                .replace("&quot;", "\"")
+                                .replace("&lt;", "<")
+                                .replace("&gt;", ">")
+                                .replace("&amp;", "&")
                                 .replace("\\n", "")
                                 .replace("\\t", "");
                 return content;
