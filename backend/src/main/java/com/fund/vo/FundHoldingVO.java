@@ -4,12 +4,17 @@ import lombok.Data;
 
 /**
  * Fund Holding VO - 基金持仓
+ * 前十大持仓数组，每项结构：
+ * - code: 股票代码(6位)
+ * - name: 股票名称
+ * - weight: 占净值比例(带%)
+ * - change: 股票实时涨跌幅(来自腾讯行情)
  */
 @Data
 public class FundHoldingVO {
     
     /**
-     * 股票代码
+     * 股票代码(6位)
      */
     private String code;
     
@@ -19,12 +24,12 @@ public class FundHoldingVO {
     private String name;
     
     /**
-     * 占净值比例
+     * 占净值比例(带%)
      */
     private String weight;
     
     /**
-     * 股票涨跌幅（从腾讯股票行情获取）
+     * 股票实时涨跌幅(来自腾讯行情，如 "0.50" 表示 0.50%)
      */
-    private Double change;
+    private String change;
 }

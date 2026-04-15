@@ -499,7 +499,8 @@ public class FundApiService {
             }
             
             // 解析股票行情数据
-            // 格式: v_sh600000="1~贵州茅台~...~涨跌幅~..."
+            // 格式: v_sh600000="1~贵州茅台~600118~现价~涨跌~涨幅~..."
+            // 字段: 0=市场, 1=名称, 2=代码, 3=现价, 4=涨跌, 5=涨幅(百分比)
             Pattern stockPattern = Pattern.compile("v_(sh|sz|bj|hk)(\\d{5,6})=\"([^\"]+)\"");
             Matcher stockMatcher = stockPattern.matcher(response);
             
@@ -513,12 +514,12 @@ public class FundApiService {
                 for (FundHoldingVO holding : holdings) {
                     String holdingCode = holding.getCode();
                     if (holdingCode != null && holdingCode.equals(code)) {
-                        // fields[3]是涨幅（百分比形式，如0.50表示0.50%）
+                        // fields[5]是涨幅（百分比形式，如0.50表示0.50%）
                         try {
-                            if (fields.length > 3 && fields[3] != null && !fields[3].isEmpty()) {
-                                holding.setChange(Double.parseDouble(fields[3]));
+                            if (fields.length > 5 && fields[5] != null && !fields[5].isEmpty()) {
+                                holding.setChange(fields[5]);
                             }
-                        } catch (NumberFormatException e) {
+                        } catch (Exception e) {
                             logger.debug("解析股票涨跌幅失败: code={}", code);
                         }
                         break;
