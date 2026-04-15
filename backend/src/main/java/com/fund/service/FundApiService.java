@@ -63,11 +63,16 @@ public class FundApiService {
      * 3. 按日期覆盖净值数据
      * 4. 组合返回统一对象
      * 
+     * 异常处理：单个接口失败不影响整体，返回空/兜底
+     * 
      * @param fundCode 基金代码
      * @return FundDataVO 统一基金数据对象
      */
     public FundDataVO getFundData(String fundCode) {
         FundDataVO result = new FundDataVO();
+        result.setCode(fundCode); // 无论成功失败，都设置基金代码
+        result.setHoldings(new ArrayList<>());
+        result.setHistoryTrend(new ArrayList<>());
         
         try {
             // 1. 先请求天天基金（基础数据）
@@ -81,6 +86,17 @@ public class FundApiService {
                 result.setGztime(tianTianData.getGztime());
                 result.setJzrq(tianTianData.getJzrq());
                 result.setGszzl(tianTianData.getGszzl());
+            } else {
+                // 天天基金失败，尝试腾讯财经作为兜底
+                logger.warn("天天基金接口失败，尝试腾讯财经: fundCode={}", fundCode);
+                FundEstimateVO tencentData = getFundFromTencent(fundCode);
+                if (tencentData != null) {
+                    result.setCode(tencentData.getFundCode());
+                    result.setName(tencentData.getFundName());
+                    result.setDwjz(tencentData.getDwjz());
+                    result.setJzrq(tencentData.getJzrq());
+                    result.setZzl(tencentData.getGszzl());
+                }
             }
             
             // 2. 并行请求腾讯、持仓、走势
@@ -102,8 +118,8 @@ public class FundApiService {
                 // 3. 按日期覆盖净值数据
                 if (tencentData != null && tencentData.getJzrq() != null) {
                     // 如果腾讯日期更新，则覆盖dwjz、jzrq、zzl
-                    if (result.getJzrq() == null || 
-                        tencentData.getJzrq().compareTo(result.getJzrq()) > 0) {
+                    String currentJzrq = result.getJzrq();
+                    if (currentJzrq == null || tencentData.getJzrq().compareTo(currentJzrq) > 0) {
                         result.setDwjz(tencentData.getDwjz());
                         result.setJzrq(tencentData.getJzrq());
                         result.setZzl(tencentData.getGszzl());
@@ -114,8 +130,6 @@ public class FundApiService {
                 if (holdings != null && !holdings.isEmpty()) {
                     enrichStockData(holdings);
                     result.setHoldings(holdings);
-                } else {
-                    result.setHoldings(new ArrayList<>());
                 }
                 
                 // 设置历史走势
@@ -127,19 +141,11 @@ public class FundApiService {
                         FundTrendVO secondLast = trends.get(trends.size() - 2);
                         result.setYesterdayChange(secondLast.getEquityReturn());
                     }
-                } else {
-                    result.setHistoryTrend(new ArrayList<>());
                 }
                 
             } catch (Exception e) {
                 logger.warn("并行请求部分失败: fundCode={}, error={}", fundCode, e.getMessage());
-                // 继续返回已有数据
-                if (result.getHoldings() == null) {
-                    result.setHoldings(new ArrayList<>());
-                }
-                if (result.getHistoryTrend() == null) {
-                    result.setHistoryTrend(new ArrayList<>());
-                }
+                // 继续返回已有数据，不中断
             }
             
             logger.info("基金数据获取完成: fundCode={}", fundCode);
@@ -279,7 +285,8 @@ public class FundApiService {
     /**
      * 三、东方财富持仓（HTML解析 + 股票实时行情）
      * 地址：https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code={code}&topline=10
-     * 解析：自动识别股票代码、名称、占净值比例
+     * 解析：var apidata={ content:"<div>...</div>", arryear:[], curyear: }
+     * 自动识别股票代码、名称、占净值比例
      * 返回前10条
      * 关键：必须批量请求腾讯股票行情，给每条持仓补充change（涨跌幅）
      * 股票前缀规则：6开头=sh，0/3开头=sz，4/8开头=bj，5位=hk
@@ -296,50 +303,64 @@ public class FundApiService {
                 return holdings;
             }
             
-            // 解析HTML中的表格数据
-            // 东方财富返回的是HTML片段，包含多个季度数据，取最新季度
-            Pattern tablePattern = Pattern.compile("<tbody[^>]*>(.*?)</tbody>", Pattern.DOTALL);
-            Matcher tableMatcher = tablePattern.matcher(response);
+            // 解析 var apidata={ content:"...", arryear:[], curyear: } 格式
+            String htmlContent = extractApidataContent(response);
+            
+            if (htmlContent == null || htmlContent.isEmpty()) {
+                logger.warn("东方财富持仓数据为空: fundCode={}", fundCode);
+                return holdings;
+            }
+            
+            // 从HTML内容中提取表格数据
+            Pattern tablePattern = Pattern.compile("<table[^>]*class=\"[^\"]*tzxq[^\"]*\"[^>]*>(.*?)</table>", Pattern.DOTALL);
+            Matcher tableMatcher = tablePattern.matcher(htmlContent);
             
             if (tableMatcher.find()) {
-                String tbodyContent = tableMatcher.group(1);
+                String tableContent = tableMatcher.group(1);
                 
-                // 匹配tr标签
-                Pattern trPattern = Pattern.compile("<tr[^>]*>(.*?)</tr>", Pattern.DOTALL);
-                Matcher trMatcher = trPattern.matcher(tbodyContent);
+                // 提取tbody中的tr数据
+                Pattern tbodyPattern = Pattern.compile("<tbody[^>]*>(.*?)</tbody>", Pattern.DOTALL);
+                Matcher tbodyMatcher = tbodyPattern.matcher(tableContent);
                 
-                int count = 0;
-                while (trMatcher.find() && count < 10) {
-                    String trContent = trMatcher.group(1);
+                if (tbodyMatcher.find()) {
+                    String tbodyContent = tbodyMatcher.group(1);
                     
-                    // 提取td内容
-                    Pattern tdPattern = Pattern.compile("<td[^>]*>(.*?)</td>", Pattern.DOTALL);
-                    Matcher tdMatcher = tdPattern.matcher(trContent);
+                    // 匹配tr标签
+                    Pattern trPattern = Pattern.compile("<tr[^>]*>(.*?)</tr>", Pattern.DOTALL);
+                    Matcher trMatcher = trPattern.matcher(tbodyContent);
                     
-                    List<String> tdContents = new ArrayList<>();
-                    while (tdMatcher.find()) {
-                        tdContents.add(tdMatcher.group(1));
-                    }
-                    
-                    if (tdContents.size() >= 3) {
-                        FundHoldingVO holding = new FundHoldingVO();
+                    int count = 0;
+                    while (trMatcher.find() && count < 10) {
+                        String trContent = trMatcher.group(1);
                         
-                        // 股票代码: 提取6位数字
-                        String stockCode = extractNumbers(tdContents.get(0));
-                        if (stockCode.length() == 6) {
-                            holding.setCode(stockCode);
-                        } else {
-                            holding.setCode(tdContents.get(0).trim());
+                        // 提取td内容
+                        Pattern tdPattern = Pattern.compile("<td[^>]*>(.*?)</td>", Pattern.DOTALL);
+                        Matcher tdMatcher = tdPattern.matcher(trContent);
+                        
+                        List<String> tdContents = new ArrayList<>();
+                        while (tdMatcher.find()) {
+                            tdContents.add(tdMatcher.group(1));
                         }
                         
-                        // 股票名称
-                        holding.setName(tdContents.get(1).trim());
-                        
-                        // 占净值比例
-                        holding.setWeight(extractPercentage(tdContents.get(2)));
-                        
-                        holdings.add(holding);
-                        count++;
+                        // 格式：序号、股票代码、股票名称、最新价、涨跌幅、相关资讯、占净值比例、持股数、持仓市值
+                        if (tdContents.size() >= 7) {
+                            FundHoldingVO holding = new FundHoldingVO();
+                            
+                            // 股票代码：从 <a href='//quote.eastmoney.com/unify/r/1.600118'>600118</a> 提取
+                            String stockCode = extractStockCode(tdContents.get(1));
+                            holding.setCode(stockCode);
+                            
+                            // 股票名称：从 <a>...</a> 中提取纯文本
+                            String stockName = extractTextFromHtml(tdContents.get(2));
+                            holding.setName(stockName);
+                            
+                            // 占净值比例：提取百分比
+                            String weight = extractPercentage(tdContents.get(6));
+                            holding.setWeight(weight);
+                            
+                            holdings.add(holding);
+                            count++;
+                        }
                     }
                 }
             }
@@ -350,6 +371,70 @@ public class FundApiService {
         }
         
         return holdings;
+    }
+    
+    /**
+     * 从 var apidata={...} 格式中提取 content 字段的HTML内容
+     */
+    private String extractApidataContent(String response) {
+        if (response == null || response.isEmpty()) {
+            return null;
+        }
+        
+        try {
+            // 匹配 var apidata={ content:"...", ... }
+            Pattern pattern = Pattern.compile("var\\s+apidata\\s*=\\s*\\{[^}]*content\\s*:\\s*\"([^\"]*)\"", Pattern.DOTALL);
+            Matcher matcher = pattern.matcher(response);
+            
+            if (matcher.find()) {
+                String content = matcher.group(1);
+                // 处理转义字符
+                content = content.replace("\\\"", "\"")
+                                .replace("\\n", "")
+                                .replace("\\t", "");
+                return content;
+            }
+        } catch (Exception e) {
+            logger.warn("解析apidata失败: {}", e.getMessage());
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 从股票代码的HTML中提取纯代码
+     * 格式：<a href='//quote.eastmoney.com/unify/r/1.600118'>600118</a>
+     */
+    private String extractStockCode(String html) {
+        if (html == null) {
+            return "";
+        }
+        
+        // 从 <a>...</a> 标签中提取文本内容
+        Pattern pattern = Pattern.compile("<a[^>]*>(\\d{5,6})</a>");
+        Matcher matcher = pattern.matcher(html);
+        
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        
+        // 如果没有匹配到a标签，直接提取数字
+        return extractNumbers(html);
+    }
+    
+    /**
+     * 从HTML中提取纯文本内容
+     */
+    private String extractTextFromHtml(String html) {
+        if (html == null) {
+            return "";
+        }
+        
+        // 移除所有HTML标签
+        String text = html.replaceAll("<[^>]+>", "");
+        // 移除多余空白
+        text = text.replaceAll("\\s+", " ").trim();
+        return text;
     }
     
     /**
