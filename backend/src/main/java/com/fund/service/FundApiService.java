@@ -307,7 +307,14 @@ public class FundApiService {
             String htmlContent = extractApidataContent(response);
             
             if (htmlContent == null || htmlContent.isEmpty()) {
-                logger.warn("东方财富持仓数据为空: fundCode={}", fundCode);
+                logger.info("东方财富持仓数据为空（无持仓或未公布）: fundCode={}", fundCode);
+                return holdings;
+            }
+            
+            // 检查内容是否有效（可能包含 "暂无数据" 等）
+            if (htmlContent.contains("暂无") || htmlContent.contains("没有") || 
+                htmlContent.length() < 100) {
+                logger.info("东方财富持仓无有效数据: fundCode={}", fundCode);
                 return holdings;
             }
             
