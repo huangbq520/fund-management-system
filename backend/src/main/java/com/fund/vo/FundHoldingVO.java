@@ -22,4 +22,9 @@ public class FundHoldingVO {
      * 占净值比例
      */
     private String weight;
+    
+    /**
+     * 股票涨跌幅（从腾讯股票行情获取）
+     */
+    private Double change;
 }

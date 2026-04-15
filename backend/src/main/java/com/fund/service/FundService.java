@@ -2,6 +2,7 @@ package com.fund.service;
 
 import com.fund.entity.Fund;
 import com.fund.mapper.FundMapper;
+import com.fund.vo.FundDataVO;
 import com.fund.vo.FundDetailVO;
 import com.fund.vo.FundEstimateVO;
 import com.fund.vo.FundHoldingVO;
@@ -184,5 +185,18 @@ public class FundService {
         
         int result = fundMapper.deleteByCode(fundCode);
         return result > 0;
+    }
+    
+    /**
+     * 获取基金完整数据（统一接口）
+     * 聚合天天基金、腾讯财经、东方财富持仓、东方财富走势4个接口数据
+     * 
+     * @param fundCode 基金代码
+     * @return FundDataVO 统一基金数据对象
+     */
+    public FundDataVO getFundData(String fundCode) {
+        logger.info("获取基金完整数据: fundCode={}", fundCode);
+        
+        return fundApiService.getFundData(fundCode);
     }
 }

@@ -3,6 +3,7 @@ package com.fund.service;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.fund.util.HttpUtil;
+import com.fund.vo.FundDataVO;
 import com.fund.vo.FundEstimateVO;
 import com.fund.vo.FundHoldingVO;
 import com.fund.vo.FundTrendVO;
@@ -13,17 +14,29 @@ import org.springframework.stereotype.Service;
 import javax.annotation.Resource;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Third-party API Adapter Service
- * 第三方接口适配服务
+ * 第三方接口适配模块
+ * 统一调用天天基金、腾讯财经、东方财富持仓、东方财富走势4个接口
+ * 返回完整基金结构化数据
+ * 
+ * 执行流程：
+ * 1. 先请求天天基金
+ * 2. 并行请求腾讯、持仓、走势
+ * 3. 按日期覆盖净值数据
+ * 4. 组合返回统一对象
+ * 5. 任何子接口异常不中断主流程
  */
 @Service
 public class FundApiService {
     
     private static final Logger logger = LoggerFactory.getLogger(FundApiService.class);
+    
+    // 超时配置：5秒
+    private static final int TIMEOUT_SECONDS = 5;
     
     // 天天基金接口地址
     private static final String TIAN_TIAN_FUND_URL = "https://fundgz.1234567.com.cn/js/%s.js?rt=%d";
@@ -33,18 +46,121 @@ public class FundApiService {
     private static final String EAST_MONEY_HOLDINGS_URL = "https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code=%s&topline=10&_=%d";
     // 东方财富走势接口地址
     private static final String EAST_MONEY_TREND_URL = "https://fund.eastmoney.com/pingzhongdata/%s.js?v=%d";
+    // 腾讯股票实时行情接口
+    private static final String TENCENT_STOCK_URL = "https://qt.gtimg.cn/q=%s";
+    
+    // 线程池用于并行请求
+    private final ExecutorService executorService = Executors.newCachedThreadPool();
     
     @Resource
     private HttpUtil httpUtil;
     
     /**
-     * Get fund estimate data from 天天基金
-     * 天天基金接口数据处理
+     * 获取基金完整数据（统一入口）
+     * 按指定流程执行：
+     * 1. 先请求天天基金
+     * 2. 并行请求腾讯、持仓、走势
+     * 3. 按日期覆盖净值数据
+     * 4. 组合返回统一对象
+     * 
+     * @param fundCode 基金代码
+     * @return FundDataVO 统一基金数据对象
+     */
+    public FundDataVO getFundData(String fundCode) {
+        FundDataVO result = new FundDataVO();
+        
+        try {
+            // 1. 先请求天天基金（基础数据）
+            FundEstimateVO tianTianData = getFundFromTianTian(fundCode);
+            
+            if (tianTianData != null) {
+                result.setCode(tianTianData.getFundCode());
+                result.setName(tianTianData.getFundName());
+                result.setDwjz(tianTianData.getDwjz());
+                result.setGsz(tianTianData.getGsz());
+                result.setGztime(tianTianData.getGztime());
+                result.setJzrq(tianTianData.getJzrq());
+                result.setGszzl(tianTianData.getGszzl());
+            }
+            
+            // 2. 并行请求腾讯、持仓、走势
+            CompletableFuture<FundEstimateVO> tencentFuture = CompletableFuture.supplyAsync(
+                    () -> getFundFromTencent(fundCode), executorService);
+            
+            CompletableFuture<List<FundHoldingVO>> holdingsFuture = CompletableFuture.supplyAsync(
+                    () -> getFundHoldings(fundCode), executorService);
+            
+            CompletableFuture<List<FundTrendVO>> trendFuture = CompletableFuture.supplyAsync(
+                    () -> getFundTrend(fundCode), executorService);
+            
+            // 等待所有并行请求完成
+            try {
+                FundEstimateVO tencentData = tencentFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                List<FundHoldingVO> holdings = holdingsFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                List<FundTrendVO> trends = trendFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                
+                // 3. 按日期覆盖净值数据
+                if (tencentData != null && tencentData.getJzrq() != null) {
+                    // 如果腾讯日期更新，则覆盖dwjz、jzrq、zzl
+                    if (result.getJzrq() == null || 
+                        tencentData.getJzrq().compareTo(result.getJzrq()) > 0) {
+                        result.setDwjz(tencentData.getDwjz());
+                        result.setJzrq(tencentData.getJzrq());
+                        result.setZzl(tencentData.getGszzl());
+                    }
+                }
+                
+                // 4. 批量获取持仓股票实时行情并补充change
+                if (holdings != null && !holdings.isEmpty()) {
+                    enrichStockData(holdings);
+                    result.setHoldings(holdings);
+                } else {
+                    result.setHoldings(new ArrayList<>());
+                }
+                
+                // 设置历史走势
+                if (trends != null && !trends.isEmpty()) {
+                    result.setHistoryTrend(trends);
+                    
+                    // 5. 取倒数第二条equityReturn作为yesterdayChange
+                    if (trends.size() >= 2) {
+                        FundTrendVO secondLast = trends.get(trends.size() - 2);
+                        result.setYesterdayChange(secondLast.getEquityReturn());
+                    }
+                } else {
+                    result.setHistoryTrend(new ArrayList<>());
+                }
+                
+            } catch (Exception e) {
+                logger.warn("并行请求部分失败: fundCode={}, error={}", fundCode, e.getMessage());
+                // 继续返回已有数据
+                if (result.getHoldings() == null) {
+                    result.setHoldings(new ArrayList<>());
+                }
+                if (result.getHistoryTrend() == null) {
+                    result.setHistoryTrend(new ArrayList<>());
+                }
+            }
+            
+            logger.info("基金数据获取完成: fundCode={}", fundCode);
+            
+        } catch (Exception e) {
+            logger.error("获取基金数据异常: fundCode={}, error={}", fundCode, e.getMessage());
+        }
+        
+        return result;
+    }
+    
+    /**
+     * 一、天天基金（JSONP解析，基础数据）
+     * 地址：https://fundgz.1234567.com.cn/js/{code}.js?rt=时间戳
+     * 提取：code、name、dwjz、gsz、gszzl、gztime、jzrq
+     * 处理：截取()内JSON，解析为对象，gszzl转为数字
      */
     public FundEstimateVO getFundFromTianTian(String fundCode) {
         try {
             String url = String.format(TIAN_TIAN_FUND_URL, fundCode, System.currentTimeMillis());
-            String response = httpUtil.get(url);
+            String response = httpUtil.get(url, TIMEOUT_SECONDS);
             
             if (response == null || response.isEmpty()) {
                 logger.warn("天天基金接口返回为空: fundCode={}", fundCode);
@@ -86,14 +202,15 @@ public class FundApiService {
     }
     
     /**
-     * Get fund data from 腾讯财经
-     * 腾讯财经接口数据处理
-     * 返回格式: v_jj000001="1~华夏成长混合~0.20~...~1.0000~0.20~2025-04-15~..."
+     * 二、腾讯财经（~分割，覆盖单位净值）
+     * 地址：https://qt.gtimg.cn/q=jj{code}
+     * 提取：dwjz=p[5]、zzl=p[7]、jzrq=p[8]
+     * 规则：如果腾讯日期更新，则覆盖dwjz、jzrq、zzl
      */
     public FundEstimateVO getFundFromTencent(String fundCode) {
         try {
             String url = String.format(TENCENT_FUND_URL, fundCode);
-            String response = httpUtil.get(url);
+            String response = httpUtil.get(url, TIMEOUT_SECONDS);
             
             if (response == null || response.isEmpty()) {
                 logger.warn("腾讯财经接口返回为空: fundCode={}", fundCode);
@@ -104,7 +221,6 @@ public class FundApiService {
             String key = "v_jj" + fundCode + "=\"";
             int startIndex = response.indexOf(key);
             if (startIndex == -1) {
-                // 尝试另一种格式
                 key = "v_jj" + fundCode + "=\"";
                 startIndex = response.indexOf(key);
             }
@@ -132,11 +248,11 @@ public class FundApiService {
             vo.setFundCode(fundCode);
             vo.setFundName(fields[1]); // 基金名称
             
-            // 索引5: 单位净值
+            // 索引5: 单位净值 dwjz
             String dwjz = fields[5];
             vo.setDwjz(dwjz.isEmpty() ? null : dwjz);
             
-            // 索引7: 涨跌幅
+            // 索引7: 涨跌幅 zzl
             String zzl = fields[7];
             try {
                 vo.setGszzl(zzl.isEmpty() ? null : Double.parseDouble(zzl));
@@ -144,7 +260,7 @@ public class FundApiService {
                 vo.setGszzl(null);
             }
             
-            // 索引8: 净值日期 (截取前10位)
+            // 索引8: 净值日期 jzrq
             String jzrq = fields[8];
             if (jzrq != null && jzrq.length() >= 10) {
                 vo.setJzrq(jzrq.substring(0, 10));
@@ -161,15 +277,19 @@ public class FundApiService {
     }
     
     /**
-     * Get fund holdings from 东方财富
-     * 东方财富持仓接口数据处理
+     * 三、东方财富持仓（HTML解析 + 股票实时行情）
+     * 地址：https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code={code}&topline=10
+     * 解析：自动识别股票代码、名称、占净值比例
+     * 返回前10条
+     * 关键：必须批量请求腾讯股票行情，给每条持仓补充change（涨跌幅）
+     * 股票前缀规则：6开头=sh，0/3开头=sz，4/8开头=bj，5位=hk
      */
     public List<FundHoldingVO> getFundHoldings(String fundCode) {
         List<FundHoldingVO> holdings = new ArrayList<>();
         
         try {
             String url = String.format(EAST_MONEY_HOLDINGS_URL, fundCode, System.currentTimeMillis());
-            String response = httpUtil.get(url);
+            String response = httpUtil.get(url, TIMEOUT_SECONDS);
             
             if (response == null || response.isEmpty()) {
                 logger.warn("东方财富持仓接口返回为空: fundCode={}", fundCode);
@@ -233,15 +353,113 @@ public class FundApiService {
     }
     
     /**
-     * Get fund trend data from 东方财富
-     * 东方财富走势接口数据处理
+     * 批量获取股票实时行情，给每条持仓补充change（涨跌幅）
+     * 股票前缀规则：
+     * - 6开头 = sh (上海)
+     * - 0/3开头 = sz (深圳)
+     * - 4/8开头 = bj (北京)
+     * - 5位 = hk (港股)
+     * 
+     * 腾讯股票行情返回格式: v_sh600000="1~贵州茅台~...~0.50~..."
+     * 字段: 0=名称, 1=代码, ..., 3=现价, 4=涨跌, 5=涨幅
+     */
+    private void enrichStockData(List<FundHoldingVO> holdings) {
+        if (holdings == null || holdings.isEmpty()) {
+            return;
+        }
+        
+        try {
+            // 构建股票代码前缀
+            List<String> stockCodes = new ArrayList<>();
+            for (FundHoldingVO holding : holdings) {
+                String code = holding.getCode();
+                if (code != null && code.length() == 6) {
+                    String prefix;
+                    char first = code.charAt(0);
+                    if (first == '6') {
+                        prefix = "sh";
+                    } else if (first == '0' || first == '3') {
+                        prefix = "sz";
+                    } else if (first == '4' || first == '8') {
+                        prefix = "bj";
+                    } else {
+                        prefix = "hk";
+                    }
+                    stockCodes.add(prefix + code);
+                } else if (code != null && code.length() == 5) {
+                    // 港股5位代码
+                    stockCodes.add("hk" + code);
+                }
+            }
+            
+            if (stockCodes.isEmpty()) {
+                return;
+            }
+            
+            // 批量请求腾讯股票行情
+            StringBuilder urlBuilder = new StringBuilder();
+            for (int i = 0; i < stockCodes.size(); i++) {
+                if (i > 0) {
+                    urlBuilder.append(",");
+                }
+                urlBuilder.append(stockCodes.get(i));
+            }
+            
+            String url = String.format(TENCENT_STOCK_URL, urlBuilder.toString());
+            String response = httpUtil.get(url, TIMEOUT_SECONDS);
+            
+            if (response == null || response.isEmpty()) {
+                logger.warn("股票行情接口返回为空");
+                return;
+            }
+            
+            // 解析股票行情数据
+            // 格式: v_sh600000="1~贵州茅台~...~涨跌幅~..."
+            Pattern stockPattern = Pattern.compile("v_(sh|sz|bj|hk)(\\d{5,6})=\"([^\"]+)\"");
+            Matcher stockMatcher = stockPattern.matcher(response);
+            
+            while (stockMatcher.find()) {
+                String prefix = stockMatcher.group(1);
+                String code = stockMatcher.group(2);
+                String data = stockMatcher.group(3);
+                String[] fields = data.split("~");
+                
+                // 查找对应的持仓记录
+                for (FundHoldingVO holding : holdings) {
+                    String holdingCode = holding.getCode();
+                    if (holdingCode != null && holdingCode.equals(code)) {
+                        // fields[3]是涨幅（百分比形式，如0.50表示0.50%）
+                        try {
+                            if (fields.length > 3 && fields[3] != null && !fields[3].isEmpty()) {
+                                holding.setChange(Double.parseDouble(fields[3]));
+                            }
+                        } catch (NumberFormatException e) {
+                            logger.debug("解析股票涨跌幅失败: code={}", code);
+                        }
+                        break;
+                    }
+                }
+            }
+            
+            logger.info("股票行情批量获取完成: count={}", stockCodes.size());
+            
+        } catch (Exception e) {
+            logger.error("批量获取股票行情失败: error={}", e.getMessage());
+        }
+    }
+    
+    /**
+     * 四、东方财富走势（提取Data_netWorthTrend）
+     * 地址：https://fund.eastmoney.com/pingzhongdata/{code}.js?v=时间戳
+     * 截取最近90条数据
+     * 取倒数第二条equityReturn作为yesterdayChange
      */
     public List<FundTrendVO> getFundTrend(String fundCode) {
         List<FundTrendVO> trends = new ArrayList<>();
         
         try {
             String url = String.format(EAST_MONEY_TREND_URL, fundCode, System.currentTimeMillis());
-            String response = httpUtil.get(url);
+            String response = httpUtil.get(url, TIMEOUT_SECONDS);
             
             if (response == null || response.isEmpty()) {
                 logger.warn("东方财富走势接口返回为空: fundCode={}", fundCode);
@@ -301,8 +519,8 @@ public class FundApiService {
     }
     
     /**
-     * Parse JSONP format
-     * 解析JSONP格式，提取JSON部分
+     * 解析JSONP格式
+     * 提取JSON部分
      */
     private String parseJsonP(String response) {
         if (response == null || response.isEmpty()) {
@@ -322,7 +540,7 @@ public class FundApiService {
     }
     
     /**
-     * Extract numbers from string
+     * 从字符串中提取数字
      */
     private String extractNumbers(String str) {
         if (str == null) {
@@ -337,7 +555,7 @@ public class FundApiService {
     }
     
     /**
-     * Extract percentage from string
+     * 从字符串中提取百分比
      */
     private String extractPercentage(String str) {
         if (str == null) {

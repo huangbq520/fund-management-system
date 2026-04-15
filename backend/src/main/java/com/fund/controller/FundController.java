@@ -2,6 +2,7 @@ package com.fund.controller;
 
 import com.fund.service.FundService;
 import com.fund.vo.ApiResponse;
+import com.fund.vo.FundDataVO;
 import com.fund.vo.FundDetailVO;
 import com.fund.vo.FundEstimateVO;
 import org.slf4j.Logger;
@@ -83,6 +84,31 @@ public class FundController {
         
         if (detail.getFundCode() != null) {
             return ApiResponse.success(detail);
+        } else {
+            return ApiResponse.error("基金数据加载失败");
+        }
+    }
+    
+    /**
+     * GET /api/fund/data
+     * 获取基金完整数据（统一接口）
+     * 聚合天天基金、腾讯财经、东方财富持仓、东方财富走势4个接口数据
+     * 
+     * @param code 基金代码（必填）
+     * @return 统一基金数据对象
+     */
+    @GetMapping("/data")
+    public ApiResponse<FundDataVO> getFundData(@RequestParam("code") String code) {
+        logger.info("API: 获取基金完整数据, code={}", code);
+        
+        if (code == null || code.trim().isEmpty()) {
+            return ApiResponse.error("基金代码不能为空");
+        }
+        
+        FundDataVO fundData = fundService.getFundData(code.trim());
+        
+        if (fundData != null && fundData.getCode() != null) {
+            return ApiResponse.success(fundData);
         } else {
             return ApiResponse.error("基金数据加载失败");
         }
