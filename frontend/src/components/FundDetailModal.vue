@@ -5,14 +5,14 @@
         <h2>基金详情 - {{ fundCode }}</h2>
         <button @click="handleClose" class="close-btn">×</button>
       </div>
-      
+
       <div class="modal-body">
         <!-- Loading -->
         <div v-if="loading" class="loading">加载中...</div>
-        
+
         <!-- Error -->
         <div v-else-if="error" class="error">{{ error }}</div>
-        
+
         <!-- Content -->
         <template v-else-if="detail">
           <!-- Basic Info Card -->
@@ -51,13 +51,13 @@
               </div>
             </div>
           </div>
-          
+
           <!-- Trend Chart -->
           <div class="chart-card">
             <h3>近90天业绩走势</h3>
             <div ref="chartRef" class="chart-container"></div>
           </div>
-          
+
           <!-- Holdings Table -->
           <div class="holdings-card">
             <h3>持仓股票 (前10)</h3>
@@ -71,8 +71,8 @@
               </thead>
               <tbody>
                 <tr v-for="(holding, index) in detail.holdings" :key="index">
-                  <td>{{ holding.code }}</td>
-                  <td>{{ holding.name }}</td>
+                  <td>{{ holding.stockCode }}</td>
+                  <td>{{ holding.stockName }}</td>
                   <td>{{ holding.weight }}</td>
                 </tr>
               </tbody>
@@ -86,8 +86,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
-import * as echarts from 'echarts'
+import { ref, onMounted, nextTick, watch } from 'vue'
 import { fundApi } from '../api'
 
 const props = defineProps({
@@ -108,14 +107,15 @@ let chartInstance = null
 const loadDetail = async () => {
   loading.value = true
   error.value = ''
-  
+
   try {
-    const response = await fundApi.detail(props.fundCode)
+    const response = await fundApi.getFundData(props.fundCode)
     if (response.code === 200 && response.data) {
       detail.value = response.data
-      // Initialize chart after data is loaded
       await nextTick()
-      initChart()
+      setTimeout(() => {
+        initChart()
+      }, 100)
     } else {
       error.value = response.message || '加载失败'
     }
@@ -128,27 +128,47 @@ const loadDetail = async () => {
 }
 
 const initChart = () => {
-  if (!chartRef.value || !detail.value || !detail.value.historyTrend) return
-  
+  const echartsLib = window.echarts || echarts
+
+  if (!chartRef.value) {
+    console.log('initChart: chartRef is null, retrying...')
+    setTimeout(() => initChart(), 200)
+    return
+  }
+
+  if (!echartsLib) {
+    console.log('initChart: echarts not loaded yet, retrying...')
+    setTimeout(() => initChart(), 200)
+    return
+  }
+
+  if (!detail.value || !detail.value.historyTrend) {
+    console.log('initChart: detail or historyTrend not ready')
+    return
+  }
+
   const trendData = detail.value.historyTrend
-  if (trendData.length === 0) return
-  
-  // Convert timestamp to date string
+  if (trendData.length === 0) {
+    console.log('initChart: trendData is empty')
+    return
+  }
+
   const dates = trendData.map(item => {
-    const date = new Date(item.x)
+    const timestamp = Number(item.date)
+    const date = new Date(timestamp)
     return `${date.getMonth() + 1}-${date.getDate()}`
   })
-  
-  const values = trendData.map(item => item.y)
-  
-  chartInstance = echarts.init(chartRef.value)
-  
+
+  const values = trendData.map(item => item.netValue)
+
+  chartInstance = echartsLib.init(chartRef.value)
+
   const option = {
     tooltip: {
       trigger: 'axis',
       formatter: function (params) {
         const param = params[0]
-        const date = new Date(trendData[param.dataIndex].x)
+        const date = new Date(trendData[param.dataIndex].date)
         return `${date.toLocaleDateString()}<br/>净值: ${param.value}`
       }
     },
@@ -203,10 +223,9 @@ const initChart = () => {
       data: values
     }]
   }
-  
+
   chartInstance.setOption(option)
-  
-  // Handle window resize
+
   window.addEventListener('resize', () => {
     chartInstance && chartInstance.resize()
   })

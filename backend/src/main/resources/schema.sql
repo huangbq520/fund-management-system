@@ -1,8 +1,7 @@
 -- Fund Management System Database Schema
--- 创建数据库（如果不存在）
-CREATE DATABASE IF NOT EXISTS fund_db DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE IF NOT EXISTS jiangcai_fund DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-USE fund_db;
+USE jiangcai_fund;
 
 -- 基金信息表
 CREATE TABLE IF NOT EXISTS fund (

@@ -1,3 +1,5 @@
+package com.fund.util;
+
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -53,15 +55,17 @@ public class HttpUtil {
                 .readTimeout(timeoutSeconds, TimeUnit.SECONDS)
                 .writeTimeout(timeoutSeconds, TimeUnit.SECONDS)
                 .build();
-        
+
         Request request = new Request.Builder()
                 .url(url)
                 .get()
                 .build();
-        
+
         try (Response response = client.newCall(request).execute()) {
             if (response.isSuccessful() && response.body() != null) {
                 return response.body().string();
+            } else {
+                logger.warn("HttpUtil.get: url={}, response不成功, code={}", url, response.code());
             }
         } catch (IOException e) {
             logger.error("HTTP request failed: {}, error: {}", url, e.getMessage());

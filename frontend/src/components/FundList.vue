@@ -6,49 +6,49 @@
         刷新
       </button>
     </div>
-    
+
     <!-- Loading State -->
     <div v-if="loading" class="loading">
       加载中...
     </div>
-    
+
     <!-- Empty State -->
     <div v-else-if="funds.length === 0" class="empty">
       暂无基金，请搜索添加
     </div>
-    
+
     <!-- Fund List -->
     <div v-else class="list-content">
-      <div 
-        v-for="fund in funds" 
-        :key="fund.fundCode" 
+      <div
+        v-for="fund in funds"
+        :key="fund.fundCode"
         class="fund-item"
       >
         <div class="fund-info">
           <div class="fund-name">{{ fund.fundName || fund.fundCode }}</div>
           <div class="fund-code">{{ fund.fundCode }}</div>
         </div>
-        
+
         <div class="fund-data">
           <div class="data-item">
             <span class="label">估算净值</span>
-            <span class="value">{{ fund.gsz || '-' }}</span>
+            <span class="value">{{ fundDataMap[fund.fundCode]?.gsz || '-' }}</span>
           </div>
           <div class="data-item">
             <span class="label">涨跌幅</span>
-            <span 
-              class="value" 
-              :class="getChangeClass(fund.gszzl)"
+            <span
+              class="value"
+              :class="getChangeClass(fundDataMap[fund.fundCode]?.gszzl)"
             >
-              {{ formatPercent(fund.gszzl) }}
+              {{ formatPercent(fundDataMap[fund.fundCode]?.gszzl) }}
             </span>
           </div>
           <div class="data-item">
             <span class="label">估值时间</span>
-            <span class="value">{{ fund.gztime || '-' }}</span>
+            <span class="value">{{ fundDataMap[fund.fundCode]?.gztime || '-' }}</span>
           </div>
         </div>
-        
+
         <div class="fund-actions">
           <button @click="viewDetail(fund.fundCode)" class="detail-btn">
             查看详情
@@ -69,6 +69,7 @@ import { fundApi } from '../api'
 const emit = defineEmits(['delete-fund', 'view-detail'])
 
 const funds = ref([])
+const fundDataMap = ref({})
 const loading = ref(false)
 
 const loadFunds = async () => {
@@ -77,12 +78,29 @@ const loadFunds = async () => {
     const response = await fundApi.list()
     if (response.code === 200) {
       funds.value = response.data || []
+      await loadFundData()
     }
   } catch (err) {
     console.error('Failed to load funds:', err)
   } finally {
     loading.value = false
   }
+}
+
+const loadFundData = async () => {
+  const dataMap = {}
+  const promises = funds.value.map(async (fund) => {
+    try {
+      const resp = await fundApi.getFundData(fund.fundCode)
+      if (resp.code === 200 && resp.data) {
+        dataMap[fund.fundCode] = resp.data
+      }
+    } catch (err) {
+      console.error(`Failed to load fund data for ${fund.fundCode}:`, err)
+    }
+  })
+  await Promise.all(promises)
+  fundDataMap.value = dataMap
 }
 
 const refreshList = () => {
@@ -95,7 +113,7 @@ const viewDetail = (fundCode) => {
 
 const deleteFund = async (fundCode) => {
   if (!confirm('确定要删除该基金吗？')) return
-  
+
   try {
     const response = await fundApi.delete(fundCode)
     if (response.code === 200) {
@@ -124,11 +142,9 @@ const getChangeClass = (value) => {
 // Load data on mount
 onMounted(() => {
   loadFunds()
-  // Auto refresh every 30 seconds
   setInterval(loadFunds, 30000)
 })
 
-// Expose refresh method for parent
 defineExpose({ refreshList })
 </script>
 
