@@ -66,7 +66,7 @@
                 <tr>
                   <th>股票代码</th>
                   <th>股票名称</th>
-                  <th>占净值比例</th>
+                  <th>占比</th>
                 </tr>
               </thead>
               <tbody>

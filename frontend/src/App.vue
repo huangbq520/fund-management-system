@@ -1,7 +1,7 @@
 <template>
   <div id="app">
     <header class="app-header">
-      <h1>基金实时估值与持仓管理系统</h1>
+      <h1>酱菜养基</h1>
     </header>
 
     <main class="app-main">

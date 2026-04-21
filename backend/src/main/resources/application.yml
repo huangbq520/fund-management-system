@@ -6,9 +6,9 @@ spring:
     name: fund-management
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/fund_db?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://localhost:3306/jiangcai_fund?useUnicode=true&characterEncoding=utf8
     username: root
-    password: root
+    password: 518680
 
 mybatis:
   mapper-locations: classpath:mapper/*.xml
