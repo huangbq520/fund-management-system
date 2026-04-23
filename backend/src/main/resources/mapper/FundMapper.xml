@@ -1,35 +1,41 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.fund.mapper.FundMapper">
-    
-    <!-- 查询所有基金 -->
+
     <select id="selectAll" resultType="com.fund.entity.Fund">
-        SELECT id, fund_code AS fundCode, fund_name AS fundName, create_time AS createTime
-        FROM fund
-        ORDER BY create_time DESC
+        SELECT f.id, f.user_id AS userId, f.fund_code AS fundCode, f.fund_name AS fundName,
+               f.create_time AS createTime,
+               uf.hold_share AS holdShare, uf.hold_amount AS holdAmount,
+               uf.cost_price AS costPrice, uf.buy_date AS buyDate,
+               uf.today_buy_share AS todayBuyShare, uf.today_sell_share AS todaySellShare
+        FROM fund f
+        LEFT JOIN user_fund uf ON f.fund_code = uf.fund_code AND f.user_id = uf.user_id
+        WHERE f.user_id = #{userId}
+        ORDER BY f.create_time DESC
     </select>
-    
-    <!-- 根据基金代码查询 -->
+
     <select id="selectByCode" resultType="com.fund.entity.Fund">
-        SELECT id, fund_code AS fundCode, fund_name AS fundName, create_time AS createTime
-        FROM fund
-        WHERE fund_code = #{fundCode}
+        SELECT f.id, f.user_id AS userId, f.fund_code AS fundCode, f.fund_name AS fundName,
+               f.create_time AS createTime,
+               uf.hold_share AS holdShare, uf.hold_amount AS holdAmount,
+               uf.cost_price AS costPrice, uf.buy_date AS buyDate,
+               uf.today_buy_share AS todayBuyShare, uf.today_sell_share AS todaySellShare
+        FROM fund f
+        LEFT JOIN user_fund uf ON f.fund_code = uf.fund_code AND f.user_id = uf.user_id
+        WHERE f.fund_code = #{fundCode} AND f.user_id = #{userId}
     </select>
-    
-    <!-- 插入基金 -->
+
     <insert id="insert" parameterType="com.fund.entity.Fund" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO fund (fund_code, fund_name, create_time)
-        VALUES (#{fundCode}, #{fundName}, NOW())
+        INSERT INTO fund (user_id, fund_code, fund_name, create_time)
+        VALUES (#{userId}, #{fundCode}, #{fundName}, NOW())
     </insert>
-    
-    <!-- 删除基金 -->
+
     <delete id="deleteByCode">
-        DELETE FROM fund WHERE fund_code = #{fundCode}
+        DELETE FROM fund WHERE fund_code = #{fundCode} AND user_id = #{userId}
     </delete>
-    
-    <!-- 检查基金是否存在 -->
+
     <select id="countByCode" resultType="int">
-        SELECT COUNT(*) FROM fund WHERE fund_code = #{fundCode}
+        SELECT COUNT(*) FROM fund WHERE fund_code = #{fundCode} AND user_id = #{userId}
     </select>
-    
+
 </mapper>

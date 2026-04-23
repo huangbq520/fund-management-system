@@ -223,9 +223,9 @@ onUnmounted(() => {
 <style scoped>
 .search-fund {
   background: white;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
 }
 
 .search-box {
@@ -234,65 +234,72 @@ onUnmounted(() => {
 
 .search-input {
   width: 100%;
-  padding: 12px 16px;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px 0 0 8px;
+  padding: 14px 100px 14px 18px;
+  border: 2px solid #e8e8e8;
+  border-radius: 12px;
   font-size: 16px;
-  transition: border-color 0.3s;
+  transition: all 0.3s;
   box-sizing: border-box;
+  background: #fafbfc;
 }
 
 .search-input:focus {
   outline: none;
   border-color: #667eea;
+  background: white;
+  box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
 }
 
 .search-btn {
   position: absolute;
-  right: 0;
-  top: 0;
-  padding: 12px 24px;
-  background: #667eea;
+  right: 4px;
+  top: 4px;
+  bottom: 4px;
+  padding: 10px 24px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   border: none;
-  border-radius: 0 8px 8px 0;
-  font-size: 16px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 500;
   cursor: pointer;
-  transition: background 0.3s;
+  transition: all 0.3s;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
 }
 
 .search-btn:hover:not(:disabled) {
-  background: #5568d3;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
 .search-btn:disabled {
   background: #ccc;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .dropdown {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 8px);
   left: 0;
-  right: 80px;
+  right: 0;
   background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  margin-top: 4px;
+  border: 1px solid #e8e8e8;
+  border-radius: 12px;
   max-height: 320px;
   overflow-y: auto;
   z-index: 1000;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
 }
 
 .dropdown-item {
-  padding: 12px 16px;
+  padding: 14px 18px;
   cursor: pointer;
   display: flex;
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid #f0f0f0;
-  transition: background 0.2s;
+  transition: all 0.2s;
 }
 
 .dropdown-item:last-child {
@@ -301,7 +308,7 @@ onUnmounted(() => {
 
 .dropdown-item:hover,
 .dropdown-item.selected {
-  background: #f5f7ff;
+  background: linear-gradient(135deg, #f8f9ff 0%, #f0f4ff 100%);
 }
 
 .fund-basic {
@@ -328,31 +335,36 @@ onUnmounted(() => {
 
 .category-badge {
   font-size: 12px;
-  padding: 2px 8px;
-  background: #e8f4ff;
+  padding: 4px 10px;
+  background: linear-gradient(135deg, #e8f4ff 0%, #d4ecff 100%);
   color: #667eea;
-  border-radius: 4px;
+  border-radius: 20px;
+  font-weight: 500;
 }
 
 .highlight {
-  background: #fff3cd;
+  background: linear-gradient(135deg, #fff3cd 0%, #ffeeba 100%);
   color: #e74c3c;
+  padding: 0 2px;
+  border-radius: 2px;
 }
 
 .no-results {
-  padding: 20px;
+  padding: 24px;
   text-align: center;
   color: #999;
+  font-size: 14px;
 }
 
 .selected-preview {
   margin-top: 16px;
-  padding: 16px;
-  background: #f8f9fa;
-  border-radius: 8px;
+  padding: 18px 20px;
+  background: linear-gradient(135deg, #f8f9ff 0%, #f0f4ff 100%);
+  border-radius: 12px;
   display: flex;
   align-items: center;
   gap: 16px;
+  border: 1px solid #e8f0ff;
 }
 
 .preview-info {
@@ -371,44 +383,52 @@ onUnmounted(() => {
 .preview-code {
   font-size: 14px;
   color: #666;
+  background: white;
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 
 .add-btn {
-  padding: 8px 20px;
-  background: #667eea;
+  padding: 10px 24px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 20px;
   font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
-  transition: background 0.3s;
+  transition: all 0.3s;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
 }
 
 .add-btn:hover {
-  background: #5568d3;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
 .clear-btn {
-  padding: 8px 16px;
-  background: #f0f0f0;
+  padding: 10px 18px;
+  background: white;
   color: #666;
-  border: none;
-  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+  border-radius: 20px;
   font-size: 14px;
   cursor: pointer;
-  transition: background 0.3s;
+  transition: all 0.3s;
 }
 
 .clear-btn:hover {
-  background: #e0e0e0;
+  background: #f5f5f5;
+  border-color: #d0d0d0;
 }
 
 .error-msg {
   margin-top: 12px;
-  padding: 10px;
-  background: #fee;
-  color: #c33;
-  border-radius: 6px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #fff5f5 0%, #ffe8e8 100%);
+  color: #e74c3c;
+  border-radius: 8px;
   font-size: 14px;
+  border: 1px solid #ffd4d4;
 }
 </style>

@@ -1,31 +1,31 @@
 package com.fund.entity;
 
 import lombok.Data;
+import java.math.BigDecimal;
 import java.util.Date;
 
-/**
- * Fund Entity - 基金实体类
- */
 @Data
 public class Fund {
-    
-    /**
-     * 主键ID
-     */
+
     private Long id;
-    
-    /**
-     * 基金代码
-     */
+
+    private Long userId;
+
     private String fundCode;
-    
-    /**
-     * 基金名称
-     */
+
     private String fundName;
-    
-    /**
-     * 添加时间
-     */
+
+    private BigDecimal holdShare;
+
+    private BigDecimal holdAmount;
+
+    private BigDecimal costPrice;
+
+    private Date buyDate;
+
+    private BigDecimal todayBuyShare;
+
+    private BigDecimal todaySellShare;
+
     private Date createTime;
 }

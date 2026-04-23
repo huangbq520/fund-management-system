@@ -1,17 +1,24 @@
 package com.fund.controller;
 
 import com.fund.entity.Fund;
+import com.fund.entity.UserFund;
 import com.fund.mapper.FundMapper;
+import com.fund.mapper.UserFundMapper;
 import com.fund.service.FundDataService;
+import com.fund.service.FundHoldingService;
 import com.fund.service.FundSearchService;
 import com.fund.vo.ApiResponse;
 import com.fund.vo.FundData;
+import com.fund.vo.FundHoldingVO;
 import com.fund.vo.FundSearchResult;
+import com.fund.vo.PortfolioSummary;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,7 +38,17 @@ public class FundController {
 
     @Resource
     private FundMapper fundMapper;
-    
+
+    @Resource
+    private UserFundMapper userFundMapper;
+
+    @Resource
+    private FundHoldingService fundHoldingService;
+
+    private Long getUserId(HttpServletRequest request) {
+        return (Long) request.getAttribute("userId");
+    }
+
     @GetMapping("/data")
     public ApiResponse<FundData> getFundData(@RequestParam("code") String code) {
         logger.info("API: 获取基金数据, code={}", code);
@@ -63,10 +80,11 @@ public class FundController {
     }
 
     @GetMapping("/list")
-    public ApiResponse<List<Fund>> listFunds() {
-        logger.info("API: 获取基金列表");
+    public ApiResponse<List<Fund>> listFunds(HttpServletRequest request) {
+        Long userId = getUserId(request);
+        logger.info("API: 获取基金列表, userId={}", userId);
         try {
-            List<Fund> funds = fundMapper.selectAll();
+            List<Fund> funds = fundMapper.selectAll(userId);
             return ApiResponse.success(funds);
         } catch (Exception e) {
             logger.error("获取基金列表失败: {}", e.getMessage());
@@ -74,26 +92,63 @@ public class FundController {
         }
     }
 
+    @GetMapping("/holding/list")
+    public ApiResponse<List<FundHoldingVO>> listHoldings(HttpServletRequest request) {
+        Long userId = getUserId(request);
+        logger.info("API: 获取持仓列表, userId={}", userId);
+        try {
+            List<FundHoldingVO> holdings = fundHoldingService.getHoldingList(userId);
+            return ApiResponse.success(holdings);
+        } catch (Exception e) {
+            logger.error("获取持仓列表失败: {}", e.getMessage());
+            return ApiResponse.error("获取持仓列表失败");
+        }
+    }
+
+    @GetMapping("/portfolio/summary")
+    public ApiResponse<PortfolioSummary> getPortfolioSummary(HttpServletRequest request) {
+        Long userId = getUserId(request);
+        logger.info("API: 获取组合汇总, userId={}", userId);
+        try {
+            PortfolioSummary summary = fundHoldingService.getPortfolioSummary(userId);
+            return ApiResponse.success(summary);
+        } catch (Exception e) {
+            logger.error("获取组合汇总失败: {}", e.getMessage());
+            return ApiResponse.error("获取组合汇总失败");
+        }
+    }
+
     @PostMapping("/add")
-    public ApiResponse<Map<String, Object>> addFund(@RequestBody Map<String, String> request) {
+    public ApiResponse<Map<String, Object>> addFund(@RequestBody Map<String, String> request, HttpServletRequest httpRequest) {
+        Long userId = getUserId(httpRequest);
         String fundCode = request.get("fundCode");
         String fundName = request.get("fundName");
-        logger.info("API: 添加基金, fundCode={}, fundName={}", fundCode, fundName);
+        logger.info("API: 添加基金, fundCode={}, fundName={}, userId={}", fundCode, fundName, userId);
 
         if (fundCode == null || fundCode.trim().isEmpty()) {
             return ApiResponse.error("基金代码不能为空");
         }
 
         try {
-            Fund existingFund = fundMapper.selectByCode(fundCode);
+            Fund existingFund = fundMapper.selectByCode(fundCode, userId);
             if (existingFund != null) {
                 return ApiResponse.error("该基金已存在");
             }
 
             Fund fund = new Fund();
+            fund.setUserId(userId);
             fund.setFundCode(fundCode);
             fund.setFundName(fundName);
             fundMapper.insert(fund);
+
+            UserFund userFund = new UserFund();
+            userFund.setUserId(userId);
+            userFund.setFundCode(fundCode);
+            userFund.setFundName(fundName);
+            userFund.setHoldShare(BigDecimal.ZERO);
+            userFund.setHoldAmount(BigDecimal.ZERO);
+            userFund.setCostPrice(BigDecimal.ZERO);
+            userFundMapper.insert(userFund);
 
             Map<String, Object> result = new HashMap<>();
             result.put("fundCode", fundCode);
@@ -105,17 +160,63 @@ public class FundController {
         }
     }
 
-    @PostMapping("/delete")
-    public ApiResponse<Void> deleteFund(@RequestBody Map<String, String> request) {
-        String fundCode = request.get("fundCode");
-        logger.info("API: 删除基金, fundCode={}", fundCode);
+    @PostMapping("/holding/update")
+    public ApiResponse<Void> updateHolding(@RequestBody Map<String, Object> request, HttpServletRequest httpRequest) {
+        Long userId = getUserId(httpRequest);
+        String fundCode = (String) request.get("fundCode");
+        logger.info("API: 更新持仓, fundCode={}, userId={}", fundCode, userId);
 
         if (fundCode == null || fundCode.trim().isEmpty()) {
             return ApiResponse.error("基金代码不能为空");
         }
 
         try {
-            fundMapper.deleteByCode(fundCode);
+            UserFund userFund = userFundMapper.findByUserIdAndFundCode(userId, fundCode);
+            if (userFund == null) {
+                return ApiResponse.error("持仓记录不存在");
+            }
+
+            if (request.containsKey("holdShare")) {
+                userFund.setHoldShare(new BigDecimal(request.get("holdShare").toString()));
+            }
+            if (request.containsKey("costPrice")) {
+                userFund.setCostPrice(new BigDecimal(request.get("costPrice").toString()));
+            }
+            if (request.containsKey("buyDate")) {
+                String buyDateStr = (String) request.get("buyDate");
+                if (buyDateStr != null && !buyDateStr.isEmpty()) {
+                    java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd");
+                    userFund.setBuyDate(sdf.parse(buyDateStr));
+                }
+            }
+
+            BigDecimal holdShare = userFund.getHoldShare();
+            BigDecimal costPrice = userFund.getCostPrice();
+            if (holdShare != null && costPrice != null && holdShare.compareTo(BigDecimal.ZERO) > 0 && costPrice.compareTo(BigDecimal.ZERO) > 0) {
+                userFund.setHoldAmount(holdShare.multiply(costPrice));
+            }
+
+            userFundMapper.update(userFund);
+            return ApiResponse.success(null);
+        } catch (Exception e) {
+            logger.error("更新持仓失败: fundCode={}, error={}", fundCode, e.getMessage());
+            return ApiResponse.error("更新持仓失败: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/delete")
+    public ApiResponse<Void> deleteFund(@RequestBody Map<String, String> request, HttpServletRequest httpRequest) {
+        Long userId = getUserId(httpRequest);
+        String fundCode = request.get("fundCode");
+        logger.info("API: 删除基金, fundCode={}, userId={}", fundCode, userId);
+
+        if (fundCode == null || fundCode.trim().isEmpty()) {
+            return ApiResponse.error("基金代码不能为空");
+        }
+
+        try {
+            userFundMapper.deleteByUserIdAndFundCode(userId, fundCode);
+            fundMapper.deleteByCode(fundCode, userId);
             return ApiResponse.success(null);
         } catch (Exception e) {
             logger.error("删除基金失败: fundCode={}, error={}", fundCode, e.getMessage());

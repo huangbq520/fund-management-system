@@ -2,30 +2,33 @@
   <div class="modal-overlay" @click.self="handleClose">
     <div class="modal-content">
       <div class="modal-header">
-        <h2>基金详情 - {{ fundCode }}</h2>
+        <h2>基金详情 <span class="fund-code">{{ fundCode }}</span></h2>
         <button @click="handleClose" class="close-btn">×</button>
       </div>
 
       <div class="modal-body">
-        <!-- Loading -->
-        <div v-if="loading" class="loading">加载中...</div>
+        <div v-if="loading" class="loading">
+          <div class="loading-spinner"></div>
+          <span>加载中...</span>
+        </div>
 
-        <!-- Error -->
-        <div v-else-if="error" class="error">{{ error }}</div>
+        <div v-else-if="error" class="error">
+          <span class="error-icon">!</span>
+          {{ error }}
+        </div>
 
-        <!-- Content -->
         <template v-else-if="detail">
-          <!-- Basic Info Card -->
           <div class="info-card">
+            <div class="card-accent"></div>
             <h3>基本信息</h3>
             <div class="info-grid">
               <div class="info-item">
                 <span class="label">基金名称</span>
-                <span class="value">{{ detail.fundName || '-' }}</span>
+                <span class="value fund-name">{{ detail.fundName || '-' }}</span>
               </div>
               <div class="info-item">
                 <span class="label">基金代码</span>
-                <span class="value">{{ detail.fundCode || '-' }}</span>
+                <span class="value code">{{ detail.fundCode || '-' }}</span>
               </div>
               <div class="info-item">
                 <span class="label">单位净值</span>
@@ -52,32 +55,39 @@
             </div>
           </div>
 
-          <!-- Trend Chart -->
           <div class="chart-card">
+            <div class="card-accent"></div>
             <h3>近90天业绩走势</h3>
             <div ref="chartRef" class="chart-container"></div>
           </div>
 
-          <!-- Holdings Table -->
           <div class="holdings-card">
+            <div class="card-accent"></div>
             <h3>持仓股票 (前10)</h3>
             <table v-if="detail.holdings && detail.holdings.length > 0" class="holdings-table">
               <thead>
                 <tr>
-                  <th>股票代码</th>
-                  <th>股票名称</th>
-                  <th>占比</th>
+                  <th class="col-index">序号</th>
+                  <th class="col-code">股票代码</th>
+                  <th class="col-name">股票名称</th>
+                  <th class="col-weight">占比</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(holding, index) in detail.holdings" :key="index">
-                  <td>{{ holding.stockCode }}</td>
-                  <td>{{ holding.stockName }}</td>
-                  <td>{{ holding.weight }}</td>
+                <tr v-for="(holding, index) in detail.holdings" :key="index" class="holding-row">
+                  <td class="col-index">{{ index + 1 }}</td>
+                  <td class="col-code">{{ holding.stockCode }}</td>
+                  <td class="col-name">{{ holding.stockName }}</td>
+                  <td class="col-weight">
+                    <span class="weight-badge">{{ holding.weight }}</span>
+                  </td>
                 </tr>
               </tbody>
             </table>
-            <div v-else class="no-data">暂无持仓数据</div>
+            <div v-else class="no-data">
+              <span class="no-data-icon">📭</span>
+              <span>暂无持仓数据</span>
+            </div>
           </div>
         </template>
       </div>
@@ -161,28 +171,51 @@ const initChart = () => {
 
   const values = trendData.map(item => item.netValue)
 
+  if (chartInstance) {
+    chartInstance.dispose()
+  }
+
   chartInstance = echartsLib.init(chartRef.value)
 
   const option = {
     tooltip: {
       trigger: 'axis',
+      backgroundColor: 'rgba(255, 255, 255, 0.98)',
+      borderColor: '#e8e8e8',
+      borderWidth: 1,
+      textStyle: {
+        color: '#333',
+        fontSize: 13
+      },
       formatter: function (params) {
         const param = params[0]
         const date = new Date(trendData[param.dataIndex].date)
-        return `${date.toLocaleDateString()}<br/>净值: ${param.value}`
+        return `<div style="font-weight: 600;">${date.toLocaleDateString()}</div>
+                <div style="color: #667eea; margin-top: 4px;">净值: <strong>${param.value}</strong></div>`
       }
     },
     grid: {
       left: '3%',
       right: '4%',
-      bottom: '3%',
+      bottom: '8%',
+      top: '8%',
       containLabel: true
     },
     xAxis: {
       type: 'category',
       boundaryGap: false,
       data: dates,
+      axisLine: {
+        lineStyle: {
+          color: '#e8e8e8'
+        }
+      },
+      axisTick: {
+        show: false
+      },
       axisLabel: {
+        color: '#888',
+        fontSize: 11,
         rotate: 45,
         interval: Math.floor(dates.length / 6)
       }
@@ -190,22 +223,39 @@ const initChart = () => {
     yAxis: {
       type: 'value',
       scale: true,
+      splitLine: {
+        lineStyle: {
+          color: '#f0f0f0',
+          type: 'dashed'
+        }
+      },
+      axisLine: {
+        show: false
+      },
+      axisTick: {
+        show: false
+      },
       axisLabel: {
-        formatter: '{value}'
+        color: '#888',
+        fontSize: 11
       }
     },
     series: [{
       name: '净值',
       type: 'line',
-      smooth: true,
+      smooth: 0.4,
       symbol: 'circle',
-      symbolSize: 4,
+      symbolSize: 5,
       lineStyle: {
         color: '#667eea',
-        width: 2
+        width: 3,
+        shadowColor: 'rgba(102, 126, 234, 0.4)',
+        shadowBlur: 10
       },
       itemStyle: {
-        color: '#667eea'
+        color: '#667eea',
+        borderWidth: 2,
+        borderColor: '#fff'
       },
       areaStyle: {
         color: {
@@ -215,8 +265,9 @@ const initChart = () => {
           x2: 0,
           y2: 1,
           colorStops: [
-            { offset: 0, color: 'rgba(102, 126, 234, 0.3)' },
-            { offset: 1, color: 'rgba(102, 126, 234, 0.05)' }
+            { offset: 0, color: 'rgba(102, 126, 234, 0.35)' },
+            { offset: 0.5, color: 'rgba(102, 126, 234, 0.15)' },
+            { offset: 1, color: 'rgba(102, 126, 234, 0.02)' }
           ]
         }
       },
@@ -249,6 +300,10 @@ const getChangeClass = (value) => {
   return value > 0 ? 'positive' : value < 0 ? 'negative' : ''
 }
 
+watch(() => props.fundCode, () => {
+  loadDetail()
+})
+
 onMounted(() => {
   loadDetail()
 })
@@ -261,146 +316,306 @@ onMounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  z-index: 1000;
+  z-index: 9999;
+  padding-top: 80px;
+  overflow-y: auto;
 }
 
 .modal-content {
   background: white;
-  border-radius: 12px;
+  border-radius: 20px;
   width: 90%;
-  max-width: 900px;
-  max-height: 90vh;
+  max-width: 920px;
+  max-height: calc(100vh - 120px);
   overflow-y: auto;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.25);
 }
 
 .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px;
+  padding: 24px 28px;
   border-bottom: 1px solid #f0f0f0;
+  position: sticky;
+  top: 0;
+  background: white;
+  border-radius: 20px 20px 0 0;
+  z-index: 10;
 }
 
 .modal-header h2 {
   margin: 0;
   font-size: 20px;
+  font-weight: 600;
   color: #333;
 }
 
+.fund-code {
+  color: #888;
+  font-weight: 400;
+  font-size: 16px;
+  margin-left: 8px;
+}
+
 .close-btn {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border: none;
-  background: #f0f0f0;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf0 100%);
   border-radius: 50%;
-  font-size: 24px;
+  font-size: 22px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #666;
+  transition: all 0.3s;
 }
 
 .close-btn:hover {
-  background: #e0e0e0;
+  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+  color: white;
+  transform: scale(1.05);
 }
 
 .modal-body {
-  padding: 20px;
+  padding: 24px 28px 32px;
 }
 
-.loading, .error {
-  text-align: center;
-  padding: 40px;
-  color: #999;
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px;
+  color: #888;
+  gap: 16px;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #f0f0f0;
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px;
   color: #e74c3c;
+  font-size: 15px;
+  background: linear-gradient(135deg, #fff5f5 0%, #ffe8e8 100%);
+  border-radius: 12px;
+  border: 1px solid #ffd4d4;
+}
+
+.error-icon {
+  width: 28px;
+  height: 28px;
+  background: #e74c3c;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 16px;
 }
 
 .info-card, .chart-card, .holdings-card {
-  margin-bottom: 20px;
-  padding: 16px;
-  background: #f8f9fa;
-  border-radius: 8px;
+  margin-bottom: 24px;
+  padding: 20px 24px 24px;
+  background: #fafbfc;
+  border-radius: 16px;
+  border: 1px solid #f0f0f0;
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow 0.3s;
+}
+
+.info-card:hover, .chart-card:hover, .holdings-card:hover {
+  box-shadow: 0 8px 32px rgba(102, 126, 234, 0.12);
+}
+
+.card-accent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
 }
 
 .info-card h3, .chart-card h3, .holdings-card h3 {
-  margin: 0 0 16px 0;
+  margin: 0 0 20px 0;
   font-size: 16px;
+  font-weight: 600;
   color: #333;
+  padding-top: 8px;
 }
 
 .info-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 20px;
 }
 
 .info-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .info-item .label {
   font-size: 12px;
-  color: #999;
+  color: #888;
+  font-weight: 500;
+  letter-spacing: 0.3px;
 }
 
 .info-item .value {
-  font-size: 14px;
+  font-size: 15px;
   color: #333;
-  font-weight: 500;
+  font-weight: 600;
+}
+
+.info-item .value.fund-name {
+  color: #333;
+  font-size: 15px;
+}
+
+.info-item .value.code {
+  color: #667eea;
+  background: rgba(102, 126, 234, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  display: inline-block;
+  width: fit-content;
 }
 
 .positive {
-  color: #e74c3c;
+  color: #e74c3c !important;
 }
 
 .negative {
-  color: #27ae60;
+  color: #27ae60 !important;
 }
 
 .chart-container {
   width: 100%;
-  height: 300px;
+  height: 320px;
+  background: white;
+  border-radius: 12px;
+  padding: 12px;
 }
 
 .holdings-table {
   width: 100%;
-  border-collapse: collapse;
-}
-
-.holdings-table th,
-.holdings-table td {
-  padding: 12px;
-  text-align: left;
-  border-bottom: 1px solid #f0f0f0;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 .holdings-table th {
-  background: #f0f0f0;
+  background: linear-gradient(135deg, #f8f9fa 0%, #f0f2f5 100%);
   font-weight: 600;
-  color: #333;
+  font-size: 13px;
+  color: #666;
+  padding: 14px 16px;
+  text-align: left;
+}
+
+.holdings-table th:first-child {
+  border-radius: 10px 0 0 10px;
+}
+
+.holdings-table th:last-child {
+  border-radius: 0 10px 10px 0;
 }
 
 .holdings-table td {
-  color: #666;
+  padding: 14px 16px;
+  border-bottom: 1px solid #f0f0f0;
+  color: #555;
+  font-size: 14px;
 }
 
-.holdings-table tr:hover {
-  background: #f8f9fa;
+.holding-row {
+  transition: all 0.3s;
+}
+
+.holding-row:hover {
+  background: linear-gradient(135deg, #f8f9ff 0%, #f5f7ff 100%);
+}
+
+.holding-row:last-child td {
+  border-bottom: none;
+}
+
+.holding-row:last-child td:first-child {
+  border-radius: 0 0 0 10px;
+}
+
+.holding-row:last-child td:last-child {
+  border-radius: 0 0 10px 0;
+}
+
+.col-index {
+  width: 60px;
+  color: #999 !important;
+  font-size: 13px !important;
+}
+
+.col-code {
+  width: 100px;
+  color: #667eea !important;
+  font-weight: 500 !important;
+}
+
+.col-name {
+  font-weight: 500 !important;
+}
+
+.col-weight {
+  text-align: right !important;
+}
+
+.weight-badge {
+  background: linear-gradient(135deg, #f0f4ff 0%, #e8ecff 100%);
+  color: #667eea;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .no-data {
-  text-align: center;
-  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 50px;
   color: #999;
+  gap: 12px;
+}
+
+.no-data-icon {
+  font-size: 40px;
+  opacity: 0.7;
 }
 </style>

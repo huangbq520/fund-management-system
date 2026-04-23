@@ -23,6 +23,14 @@ public class ApiResponse<T> {
      */
     private T data;
     
+    public static <T> ApiResponse<T> success() {
+        ApiResponse<T> response = new ApiResponse<>();
+        response.setCode(200);
+        response.setMessage("操作成功");
+        response.setData(null);
+        return response;
+    }
+
     public static <T> ApiResponse<T> success(T data) {
         ApiResponse<T> response = new ApiResponse<>();
         response.setCode(200);

@@ -23,6 +23,7 @@
         v-for="fund in funds"
         :key="fund.fundCode"
         class="fund-item"
+        @click="viewDetail(fund.fundCode)"
       >
         <div class="fund-info">
           <div class="fund-name">{{ fund.fundName || fund.fundCode }}</div>
@@ -50,11 +51,8 @@
         </div>
 
         <div class="fund-actions">
-          <button @click="viewDetail(fund.fundCode)" class="detail-btn">
-            查看详情
-          </button>
-          <button @click="deleteFund(fund.fundCode)" class="delete-btn">
-            删除
+          <button @click.stop="deleteFund(fund.fundCode)" class="delete-btn" title="删除">
+            ✕
           </button>
         </div>
       </div>
@@ -151,59 +149,72 @@ defineExpose({ refreshList })
 <style scoped>
 .fund-list {
   background: white;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
 }
 
 .list-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
 .list-header h2 {
   margin: 0;
   font-size: 18px;
+  font-weight: 600;
   color: #333;
 }
 
 .refresh-btn {
-  padding: 8px 16px;
-  background: #f0f0f0;
+  padding: 8px 18px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf0 100%);
   color: #666;
   border: none;
-  border-radius: 6px;
-  font-size: 14px;
+  border-radius: 20px;
+  font-size: 13px;
   cursor: pointer;
-  transition: background 0.3s;
+  transition: all 0.3s;
 }
 
 .refresh-btn:hover {
-  background: #e0e0e0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
 
 .loading, .empty {
   text-align: center;
-  padding: 40px;
+  padding: 50px;
   color: #999;
+  font-size: 15px;
 }
 
 .fund-item {
   display: flex;
   align-items: center;
   padding: 16px;
-  border-bottom: 1px solid #f0f0f0;
-  transition: background 0.3s;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  border-radius: 12px;
+  margin-bottom: 8px;
+  background: white;
+  border: 1px solid transparent;
 }
 
 .fund-item:hover {
-  background: #f8f9fa;
+  background: linear-gradient(135deg, #f8f9ff 0%, #f0f4ff 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.15);
+  border-color: rgba(102, 126, 234, 0.2);
 }
 
 .fund-item:last-child {
   border-bottom: none;
+  margin-bottom: 0;
 }
 
 .fund-info {
@@ -212,7 +223,7 @@ defineExpose({ refreshList })
 }
 
 .fund-name {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: #333;
   margin-bottom: 4px;
@@ -225,7 +236,7 @@ defineExpose({ refreshList })
 
 .fund-data {
   display: flex;
-  gap: 20px;
+  gap: 24px;
   flex: 2;
 }
 
@@ -233,6 +244,7 @@ defineExpose({ refreshList })
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 80px;
 }
 
 .data-item .label {
@@ -257,32 +269,26 @@ defineExpose({ refreshList })
 .fund-actions {
   display: flex;
   gap: 8px;
-}
-
-.detail-btn, .delete-btn {
-  padding: 6px 12px;
-  border: none;
-  border-radius: 4px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.detail-btn {
-  background: #667eea;
-  color: white;
-}
-
-.detail-btn:hover {
-  background: #5568d3;
+  align-items: center;
 }
 
 .delete-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: #fee;
   color: #e74c3c;
 }
 
 .delete-btn:hover {
   background: #fdd;
+  transform: scale(1.1);
 }
 </style>
