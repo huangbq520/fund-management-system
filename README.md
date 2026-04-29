@@ -33,7 +33,7 @@
 mysql -u root -p < backend/src/main/resources/schema.sql
 ```
 
-默认库名为 `jiangcai_fund`。
+schema.sql 中包含 `CREATE DATABASE jiangcai_fund`，如需自定义库名请修改脚本和配置。
 
 ### 2. 配置后端
 
@@ -103,7 +103,7 @@ npm run dev
 ## 项目结构
 
 ```
-project-root/
+fund-management-system/
 ├── backend/                Spring Boot 服务
 │   ├── src/main/java/com/fund
 │   │   ├── config           安全/JWT/Redis/OkHttp 配置
