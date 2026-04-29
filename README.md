@@ -103,7 +103,7 @@ npm run dev
 ## 项目结构
 
 ```
-fund-management-system/
+project-root/
 ├── backend/                Spring Boot 服务
 │   ├── src/main/java/com/fund
 │   │   ├── config           安全/JWT/Redis/OkHttp 配置
