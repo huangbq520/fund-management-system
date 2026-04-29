@@ -1,112 +1,129 @@
-# 基金实时估值与持仓管理系统
+# 基金实时估值与持仓管理系统（酱菜养基）
 
-基于天天基金、腾讯财经、东方财富三方公开接口的基金查询与管理工具。
+基于天天基金、东方财富、腾讯财经公开接口的基金估值与持仓管理工具，支持邮箱验证码注册、JWT 登录、持仓成本维护与组合汇总。
+
+## 功能概览
+
+- 邮箱验证码注册/登录
+- 基金搜索与添加
+- 持仓管理（份额、成本价、买入日期）
+- 组合汇总与收益概览
+- 基金详情：估值、净值、近 90 天走势、前 10 持仓
+- 大盘指数行情展示
 
 ## 技术栈
 
-### 后端
-- Java + Spring Boot
-- MyBatis + MySQL
-- OkHttp (第三方接口调用)
-- FastJSON2 (数据解析)
+- 后端：Spring Boot 2.7、MyBatis、MySQL、Redis、Spring Security + JWT、OkHttp、FastJSON2、Jsoup、JavaMail
+- 前端：Vue 3、Vite、Axios、ECharts
 
-### 前端
-- Vue3 + Vite
-- Axios
-- ECharts
+## 运行环境
 
-## 项目结构
-
-```
-fund-management/
-├── backend/                 # 后端项目
-│   ├── src/main/java/com/fund/
-│   │   ├── controller/      # REST API控制器
-│   │   ├── service/         # 业务逻辑层
-│   │   ├── mapper/          # 数据访问层
-│   │   ├── entity/          # 实体类
-│   │   ├── vo/              # 值对象
-│   │   ├── config/          # 配置类
-│   │   └── util/            # 工具类
-│   ├── src/main/resources/
-│   │   ├── mapper/          # MyBatis映射文件
-│   │   ├── application.yml  # 应用配置
-│   │   └── schema.sql       # 数据库脚本
-│   └── pom.xml
-│
-└── frontend/                # 前端项目
-    ├── src/
-    │   ├── api/             # API请求封装
-    │   ├── components/      # Vue组件
-    │   ├── App.vue          # 主组件
-    │   ├── main.js          # 入口文件
-    │   └── style.css        # 全局样式
-    ├── index.html
-    ├── vite.config.js
-    └── package.json
-```
+- JDK 8
+- Maven 3.6+
+- Node.js 16+
+- MySQL 8+
+- Redis 6+
+- 可用的 SMTP 邮箱（用于验证码发送）
 
 ## 快速开始
 
-### 1. 后端启动
+### 1. 初始化数据库
 
-#### 准备MySQL数据库
 ```sql
--- 执行 schema.sql 创建数据库和表
 mysql -u root -p < backend/src/main/resources/schema.sql
 ```
 
-#### 修改数据库配置
-编辑 `backend/src/main/resources/application.yml`，修改数据库连接信息：
-```yaml
-spring:
-  datasource:
-    url: jdbc:mysql://localhost:3306/fund_db
-    username: root
-    password: your_password
-```
+默认库名为 `jiangcai_fund`。
 
-#### 启动后端
+### 2. 配置后端
+
+编辑 `backend/src/main/resources/application.yml`，更新数据库、Redis、SMTP 与 JWT 配置：
+
+- `spring.datasource.*`
+- `spring.redis.*`
+- `spring.mail.*`
+- `jwt.secret` / `jwt.expiration`
+
+### 3. 启动后端
+
 ```bash
 cd backend
 mvn spring-boot:run
 ```
-后端服务将在 http://localhost:8080 启动
 
-### 2. 前端启动
+后端服务默认运行在 `http://localhost:8080`。
+
+### 4. 启动前端
 
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-前端服务将在 http://localhost:3000 启动
 
-## API接口
+前端默认运行在 `http://localhost:3000`，并在 `vite.config.js` 中将 `/api` 代理到后端。
 
-| 方法 | 地址 | 参数 | 说明 |
-|------|------|------|------|
-| GET | /api/fund/search | code | 搜索基金，获取实时基础信息 |
-| GET | /api/fund/list | - | 获取用户已添加的所有基金 |
-| GET | /api/fund/detail | code | 获取基金详情（含持仓、走势） |
-| POST | /api/fund/add | fundCode, fundName | 添加基金到列表 |
-| POST | /api/fund/delete | fundCode | 删除基金 |
+## API 概览
 
-## 功能特性
+### 认证接口（无需登录）
 
-- 基金搜索：输入基金代码，查询实时估值信息
-- 基金列表：展示已添加基金的实时数据，每30秒自动刷新
-- 基金详情：查看基金基本信息、业绩走势图表、持仓股票
-- 数据可视化：ECharts折线图展示近90天业绩走势
+| 方法 | 地址 | 说明 |
+| --- | --- | --- |
+| POST | /api/auth/send-verify-code | 发送邮箱验证码 |
+| POST | /api/auth/register | 注册 |
+| POST | /api/auth/login | 登录 |
+| GET | /api/auth/me | 获取当前用户 |
 
-## 第三方数据源
+### 业务接口（需 `Authorization: Bearer <token>`）
 
-- 天天基金：https://fundgz.1234567.com.cn
-- 腾讯财经：https://qt.gtimg.cn
-- 东方财富：https://fundf10.eastmoney.com
+| 方法 | 地址 | 说明 |
+| --- | --- | --- |
+| GET | /api/fund/search?keyword= | 基金搜索 |
+| GET | /api/fund/data?code= | 基金详情（估值/走势/持仓） |
+| GET | /api/fund/list | 基金列表 |
+| POST | /api/fund/add | 添加基金 |
+| POST | /api/fund/delete | 删除基金 |
+| GET | /api/fund/holding/list | 持仓列表 |
+| POST | /api/fund/holding/update | 更新持仓 |
+| GET | /api/fund/portfolio/summary | 组合汇总 |
+
+### 市场数据（无需登录）
+
+| 方法 | 地址 | 说明 |
+| --- | --- | --- |
+| GET | /api/market/indices | 大盘指数 |
+
+## 数据来源
+
+- 天天基金：`fundgz.1234567.com.cn`
+- 东方财富：`fundf10.eastmoney.com`、`fund.eastmoney.com`
+- 腾讯财经：`qt.gtimg.cn`
+- 东方财富基金搜索：`fundsuggest.eastmoney.com`
+
+## 项目结构
+
+```
+fund-management-system/
+├── backend/                Spring Boot 服务
+│   ├── src/main/java/com/fund
+│   │   ├── config           安全/JWT/Redis/OkHttp 配置
+│   │   ├── controller       API 控制器
+│   │   ├── service          业务逻辑与三方数据聚合
+│   │   ├── mapper           MyBatis Mapper
+│   │   ├── entity           实体模型
+│   │   └── vo/dto           数据传输对象
+│   └── src/main/resources
+│       ├── mapper           MyBatis XML
+│       ├── application.yml  配置文件
+│       └── schema.sql       初始化脚本
+└── frontend/               Vue 3 + Vite 前端
+    ├── src/api              API 封装
+    ├── src/components       业务组件
+    └── vite.config.js       代理配置
+```
 
 ## 注意事项
 
-1. 第三方接口为公开接口，可能存在调用限制
-2. MVP阶段不支持用户登录，仅实现单用户本地数据持久化
-3. 接口调用失败时会有兜底逻辑，确保系统可用性
+- 三方接口为公开数据源，可能存在频率或稳定性限制。
+- 邮箱验证码依赖 Redis 与 SMTP 配置，请确保相关服务可用。
+- 部署前请更换 JWT 密钥及数据库/邮箱密码。
