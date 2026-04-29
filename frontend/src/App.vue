@@ -15,6 +15,10 @@
       </header>
 
       <main class="app-main">
+        <section class="market-section">
+          <MarketIndex />
+        </section>
+
         <section class="search-section">
           <SearchFund @add-fund="handleAddFund" />
         </section>
@@ -45,6 +49,7 @@
 import { ref, onMounted } from 'vue'
 import Login from './components/Login.vue'
 import Register from './components/Register.vue'
+import MarketIndex from './components/MarketIndex.vue'
 import SearchFund from './components/SearchFund.vue'
 import PortfolioSummary from './components/PortfolioSummary.vue'
 import HoldingList from './components/HoldingList.vue'
@@ -189,6 +194,10 @@ const closeDetail = () => {
 
 .search-section {
   margin-bottom: 20px;
+}
+
+.market-section {
+  margin-bottom: 16px;
 }
 
 .summary-section {
