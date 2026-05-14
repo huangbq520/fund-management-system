@@ -62,12 +62,16 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import { fundApi } from '../api'
+import { useFundStore } from '../stores/fundStore'
+import { storeToRefs } from 'pinia'
+import { useToast } from '../composables/useToast'
 
 const emit = defineEmits(['add-fund'])
 
+const fundStore = useFundStore()
+const { searchResults } = storeToRefs(fundStore)
+
 const searchKeyword = ref('')
-const searchResults = ref([])
 const selectedFund = ref(null)
 const selectedIndex = ref(-1)
 const loading = ref(false)
@@ -77,6 +81,8 @@ const hasSearched = ref(false)
 
 let debounceTimer = null
 let clickOutsideHandler = null
+
+const toast = useToast()
 
 const handleInput = () => {
   error.value = ''
@@ -118,20 +124,13 @@ const performSearch = async () => {
   hasSearched.value = true
   showDropdown.value = true
 
-  try {
-    const response = await fundApi.searchFunds(searchKeyword.value)
-    if (response.code === 200 && response.data) {
-      searchResults.value = response.data
-      selectedIndex.value = searchResults.value.length > 0 ? 0 : -1
-    } else {
-      searchResults.value = []
-      error.value = response.message || '未找到匹配的基金'
-    }
-  } catch (err) {
-    error.value = '搜索失败，请稍后重试'
-    console.error(err)
-  } finally {
-    loading.value = false
+  const response = await fundStore.searchFunds(searchKeyword.value)
+  loading.value = false
+
+  if (response.code === 200) {
+    selectedIndex.value = searchResults.value.length > 0 ? 0 : -1
+  } else {
+    error.value = response.message || '未找到匹配的基金'
   }
 }
 
@@ -175,19 +174,19 @@ const handleAdd = async () => {
   if (!selectedFund.value) return
 
   try {
-    const response = await fundApi.add(
+    const response = await fundStore.addFund(
       selectedFund.value.fundCode,
       selectedFund.value.fundName
     )
     if (response.code === 200) {
-      alert('添加成功！')
+      toast.success('添加成功！')
       clearSelection()
       emit('add-fund')
     } else {
-      alert(response.message || '添加失败')
+      toast.error(response.message || '添加失败')
     }
   } catch (err) {
-    alert('添加失败，请稍后重试')
+    toast.error('添加失败，请稍后重试')
     console.error(err)
   }
 }

@@ -20,92 +20,22 @@
         </span>
       </div>
     </div>
+
+    <AllocationPieChart />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
-import { fundApi } from '../api'
+import { useFundStore } from '../stores/fundStore'
+import { storeToRefs } from 'pinia'
+import { formatNumber, formatProfit, formatPercent, getProfitClass } from '../composables/useFormat'
+import { useAutoRefresh, isTradingHours } from '../composables/useAutoRefresh'
+import AllocationPieChart from './AllocationPieChart.vue'
 
-const emit = defineEmits(['refresh'])
+const fundStore = useFundStore()
+const { summary } = storeToRefs(fundStore)
 
-const summary = ref({
-  totalAsset: 0,
-  todayProfit: 0,
-  todayProfitRate: 0,
-  totalProfit: 0,
-  totalProfitRate: 0,
-  fundCount: 0
-})
-
-const loading = ref(false)
-
-let refreshTimer = null
-
-const loadSummary = async () => {
-  try {
-    const response = await fundApi.getPortfolioSummary()
-    if (response.code === 200 && response.data) {
-      summary.value = response.data
-    }
-  } catch (err) {
-    console.error('Failed to load portfolio summary:', err)
-  }
-}
-
-const formatNumber = (value) => {
-  if (value === null || value === undefined) return '¥0.00'
-  const num = Number(value)
-  if (num >= 0) {
-    return '¥' + num.toLocaleString('zh-CN', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })
-  } else {
-    return '-' + '¥' + Math.abs(num).toLocaleString('zh-CN', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })
-  }
-}
-
-const formatProfit = (value) => {
-  if (value === null || value === undefined) return '+0.00'
-  const num = Number(value)
-  return (num >= 0 ? '+' : '') + num.toFixed(2)
-}
-
-const formatPercent = (value) => {
-  if (value === null || value === undefined) return '0.00%'
-  const num = Number(value)
-  return (num >= 0 ? '+' : '') + num.toFixed(2) + '%'
-}
-
-const getProfitClass = (value) => {
-  if (value === null || value === undefined || Number(value) === 0) return 'profit-zero'
-  return Number(value) > 0 ? 'profit-positive' : 'profit-negative'
-}
-
-const startAutoRefresh = () => {
-  refreshTimer = setInterval(() => {
-    loadSummary()
-  }, 30000)
-}
-
-onMounted(() => {
-  loadSummary()
-  startAutoRefresh()
-})
-
-onUnmounted(() => {
-  if (refreshTimer) {
-    clearInterval(refreshTimer)
-  }
-})
-
-defineExpose({
-  refresh: loadSummary
-})
+useAutoRefresh(() => fundStore.silentFetchSummary(), 30000, isTradingHours)
 </script>
 
 <style scoped>

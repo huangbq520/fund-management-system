@@ -17,22 +17,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
-import api from '../api'
+import { useMarketStore } from '../stores/marketStore'
+import { storeToRefs } from 'pinia'
+import { useAutoRefresh, isTradingHours } from '../composables/useAutoRefresh'
 
-const indices = ref([])
-let refreshTimer = null
+const marketStore = useMarketStore()
+const { indices } = storeToRefs(marketStore)
 
-const fetchIndices = async () => {
-  try {
-    const response = await api.get('/market/indices')
-    if (response.code === 200 && response.data) {
-      indices.value = response.data
-    }
-  } catch (err) {
-    console.error('获取大盘指数失败:', err)
-  }
-}
+useAutoRefresh(() => marketStore.fetchIndices(), 30000, isTradingHours)
 
 const formatPrice = (price) => {
   if (!price) return '--'
@@ -56,16 +48,6 @@ const getIndexClass = (index) => {
   return parseFloat(index.change) >= 0 ? 'up' : 'down'
 }
 
-onMounted(() => {
-  fetchIndices()
-  refreshTimer = setInterval(fetchIndices, 30000)
-})
-
-onUnmounted(() => {
-  if (refreshTimer) {
-    clearInterval(refreshTimer)
-  }
-})
 </script>
 
 <style scoped>

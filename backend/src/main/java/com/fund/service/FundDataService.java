@@ -15,6 +15,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.math.BigDecimal;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
@@ -138,14 +140,12 @@ public class FundDataService {
     }
 
     private boolean isTradingDay() {
-        java.util.Calendar cal = java.util.Calendar.getInstance();
-        int dayOfWeek = cal.get(java.util.Calendar.DAY_OF_WEEK);
-        if (dayOfWeek == java.util.Calendar.SATURDAY || dayOfWeek == java.util.Calendar.SUNDAY) {
+        java.time.ZonedDateTime now = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Shanghai"));
+        java.time.DayOfWeek dayOfWeek = now.getDayOfWeek();
+        if (dayOfWeek == java.time.DayOfWeek.SATURDAY || dayOfWeek == java.time.DayOfWeek.SUNDAY) {
             return false;
         }
-        int hour = cal.get(java.util.Calendar.HOUR_OF_DAY);
-        int minute = cal.get(java.util.Calendar.MINUTE);
-        int currentTime = hour * 60 + minute;
+        int currentTime = now.getHour() * 60 + now.getMinute();
         int tradingStart = 9 * 60 + 30;
         int tradingEnd = 15 * 60;
         return currentTime >= tradingStart && currentTime <= tradingEnd;
@@ -281,15 +281,26 @@ public class FundDataService {
             Matcher stockMatcher = stockPattern.matcher(response);
 
             while (stockMatcher.find()) {
+                String prefix = stockMatcher.group(1);
                 String code = stockMatcher.group(2);
                 String data = stockMatcher.group(3);
                 String[] fields = data.split("~");
 
+                if (fields.length <= 32) {
+                    logger.debug("腾讯股票行情字段不足: code={}, fields={}", code, fields.length);
+                    continue;
+                }
+
                 for (FundHolding holding : holdings) {
                     if (code.equals(holding.getStockCode())) {
                         try {
-                            if (fields.length > 5 && fields[5] != null && !fields[5].isEmpty()) {
-                                holding.setChange(Double.parseDouble(fields[5]));
+                            String changePercent = fields[32];
+                            if (changePercent != null && !changePercent.isEmpty()) {
+                                holding.setChange(Double.parseDouble(changePercent));
+                            }
+                            String stockName = fields[1];
+                            if (stockName != null && !stockName.isEmpty()) {
+                                holding.setStockName(stockName);
                             }
                         } catch (Exception e) {
                             logger.debug("解析股票涨跌幅失败: code={}", code);
@@ -775,5 +786,22 @@ public class FundDataService {
             return numMatcher.group();
         }
         return "";
+    }
+
+    public BigDecimal getNavByDate(String fundCode, String dateStr) {
+        FundData fundData = getFundData(fundCode);
+        List<FundHistoryTrend> trends = fundData.getHistoryTrend();
+        if (trends == null || trends.isEmpty()) return null;
+
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+        for (FundHistoryTrend t : trends) {
+            try {
+                String trendDate = sdf.format(new Date(Long.parseLong(t.getDate())));
+                if (trendDate.equals(dateStr) && t.getNetValue() != null) {
+                    return BigDecimal.valueOf(t.getNetValue());
+                }
+            } catch (Exception ignored) {}
+        }
+        return null;
     }
 }

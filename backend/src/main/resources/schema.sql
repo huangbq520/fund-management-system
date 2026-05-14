@@ -50,3 +50,22 @@ CREATE TABLE IF NOT EXISTS `user_fund` (
     UNIQUE KEY `uk_user_fund_code` (`user_id`, `fund_code`),
     INDEX `idx_user_id` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户基金持仓表';
+
+-- 基金每日收益统计表
+CREATE TABLE IF NOT EXISTS `fund_daily_profit` (
+    `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
+    `user_id` BIGINT NOT NULL COMMENT '用户ID',
+    `fund_code` VARCHAR(10) NOT NULL COMMENT '基金代码',
+    `fund_name` VARCHAR(50) COMMENT '基金名称（冗余，方便查询）',
+    `record_date` DATE NOT NULL COMMENT '统计日期（净值日期）',
+    `daily_profit` DECIMAL(10, 2) DEFAULT 0 COMMENT '当日收益金额',
+    `daily_return_rate` DECIMAL(10, 4) DEFAULT 0 COMMENT '当日收益率（%）',
+    `net_value` DECIMAL(10, 4) DEFAULT 0 COMMENT '当日单位净值',
+    `hold_share` DECIMAL(10, 2) DEFAULT 0 COMMENT '当日持有份额',
+    `hold_amount` DECIMAL(10, 2) DEFAULT 0 COMMENT '当日持有市值',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_user_fund_date` (`user_id`, `fund_code`, `record_date`),
+    INDEX `idx_user_id` (`user_id`),
+    INDEX `idx_user_fund` (`user_id`, `fund_code`),
+    INDEX `idx_record_date` (`record_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='基金每日收益统计表';

@@ -2,6 +2,7 @@ package com.fund.service;
 
 import com.fund.entity.Fund;
 import com.fund.entity.UserFund;
+import com.fund.mapper.FundDailyProfitMapper;
 import com.fund.mapper.FundMapper;
 import com.fund.mapper.UserFundMapper;
 import com.fund.vo.FundData;
@@ -19,6 +20,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.List;
 
 @Service
@@ -43,6 +45,9 @@ public class FundHoldingService {
 
     @Resource
     private FundDataService fundDataService;
+
+    @Resource
+    private FundDailyProfitMapper fundDailyProfitMapper;
 
     private boolean isAfterTradingClose() {
         return LocalTime.now(BEIJING_ZONE).isAfter(AFTERNOON_CLOSE);
@@ -177,6 +182,10 @@ public class FundHoldingService {
         vo.setYesterdayNetValue(fundData.getYesterdayNetValue());
         vo.setYesterdayChange(fundData.getYesterdayChange());
 
+        String yesterdayDate = LocalDate.now(BEIJING_ZONE).minusDays(1).format(DateTimeFormatter.ISO_LOCAL_DATE);
+        BigDecimal yesterdayProfit = fundDailyProfitMapper.getProfitByDate(fund.getUserId(), fund.getFundCode(), yesterdayDate);
+        vo.setYesterdayProfit(yesterdayProfit != null ? yesterdayProfit : BigDecimal.ZERO);
+
         BigDecimal holdShare = fund.getHoldShare() != null ? fund.getHoldShare() : BigDecimal.ZERO;
         BigDecimal todayBuyShare = fund.getTodayBuyShare() != null ? fund.getTodayBuyShare() : BigDecimal.ZERO;
         BigDecimal todaySellShare = fund.getTodaySellShare() != null ? fund.getTodaySellShare() : BigDecimal.ZERO;
@@ -207,18 +216,32 @@ public class FundHoldingService {
             vo.setTodayProfitConfirmed(userFund.getConfirmedProfit() != null ?
                     userFund.getConfirmedProfit().setScale(2, RoundingMode.HALF_UP) :
                     BigDecimal.ZERO);
+            vo.setTodayProfit(vo.getTodayProfitConfirmed());
             vo.setProfitStatus(1);
-            vo.setTodayProfit(BigDecimal.ZERO);
-            vo.setCurrentValue(BigDecimal.ZERO);
-            vo.setProfitRate(BigDecimal.ZERO);
-            vo.setProfitSource(PROFIT_SOURCE_NONE);
+            vo.setProfitSource(PROFIT_SOURCE_YESTERDAY_NET_VALUE);
+
+            String currentNetValue = determineCurrentNetValue(fundData, postClose);
+            vo.setCurrentNetValue(currentNetValue);
+            if (currentNetValue != null && !currentNetValue.isEmpty()) {
+                BigDecimal confirmedNetValueBD = userFund.getConfirmedNetValue() != null ?
+                        userFund.getConfirmedNetValue() : new BigDecimal(currentNetValue);
+                BigDecimal currentValue = shareForToday.multiply(confirmedNetValueBD).setScale(2, RoundingMode.HALF_UP);
+                vo.setCurrentValue(currentValue);
+
+                BigDecimal cost = shareForToday.multiply(costPrice);
+                if (cost.compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal profit = currentValue.subtract(cost);
+                    BigDecimal profitRate = profit.divide(cost, 4, RoundingMode.HALF_UP)
+                        .multiply(BigDecimal.valueOf(100));
+                    vo.setProfitRate(profitRate.setScale(2, RoundingMode.HALF_UP));
+                }
+            }
             return vo;
         }
 
         if (postClose) {
             String unitNetValue = fundData.getUnitNetValue();
             if (unitNetValue != null && !unitNetValue.isEmpty() && !unitNetValue.equals("null")) {
-                vo.setCurrentNetValue(unitNetValue);
                 BigDecimal unitNetValueBD = new BigDecimal(unitNetValue);
                 BigDecimal currentValue = shareForToday.multiply(unitNetValueBD).setScale(2, RoundingMode.HALF_UP);
 
@@ -230,13 +253,24 @@ public class FundHoldingService {
                     todayProfit = currentValue.subtract(yesterdayValue);
                 }
 
+                vo.setCurrentNetValue(unitNetValue);
                 vo.setTodayProfitConfirmed(todayProfit.setScale(2, RoundingMode.HALF_UP));
-                confirmTodayProfit(userFund, unitNetValueBD, todayProfit);
+                vo.setTodayProfit(todayProfit.setScale(2, RoundingMode.HALF_UP));
+                vo.setCurrentValue(currentValue);
+                vo.setProfitSource(PROFIT_SOURCE_YESTERDAY_NET_VALUE);
+
+                if (!alreadyConfirmed) {
+                    confirmTodayProfit(userFund, unitNetValueBD, todayProfit);
+                }
                 vo.setProfitStatus(1);
-                vo.setTodayProfit(BigDecimal.ZERO);
-                vo.setCurrentValue(BigDecimal.ZERO);
-                vo.setProfitRate(BigDecimal.ZERO);
-                vo.setProfitSource(PROFIT_SOURCE_NONE);
+
+                BigDecimal cost = shareForToday.multiply(costPrice);
+                if (cost.compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal profit = currentValue.subtract(cost);
+                    BigDecimal profitRate = profit.divide(cost, 4, RoundingMode.HALF_UP)
+                        .multiply(BigDecimal.valueOf(100));
+                    vo.setProfitRate(profitRate.setScale(2, RoundingMode.HALF_UP));
+                }
                 return vo;
             }
         }
@@ -343,5 +377,76 @@ public class FundHoldingService {
         BigDecimal changeRate = BigDecimal.valueOf(estimatedChange)
             .divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP);
         return currentValue.multiply(changeRate).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    public FundHoldingVO getSingleHolding(Long userId, String fundCode) {
+        Fund fund = fundMapper.selectByCode(fundCode, userId);
+        if (fund == null) return null;
+        FundData fundData = fundDataService.getFundData(fundCode);
+        UserFund userFund = userFundMapper.findByUserIdAndFundCode(userId, fundCode);
+        return calculateProfit(fund, fundData, userFund);
+    }
+
+    public void applyModeTwo(UserFund userFund, Map<String, Object> request) {
+        FundData fundData = fundDataService.getFundData(userFund.getFundCode());
+        String currentNetValue = determineCurrentNetValue(fundData, isAfterTradingClose());
+        if (currentNetValue == null || currentNetValue.isEmpty() || currentNetValue.equals("null")) {
+            currentNetValue = fundData.getUnitNetValue();
+        }
+        BigDecimal currentNAV = new BigDecimal(currentNetValue != null && !currentNetValue.equals("null") ? currentNetValue : "1");
+
+        BigDecimal holdAmount = new BigDecimal(request.get("holdAmount").toString());
+        BigDecimal profit;
+        if (request.containsKey("profitRate") && request.get("profitRate") != null
+                && !request.get("profitRate").toString().isEmpty()) {
+            BigDecimal profitRate = new BigDecimal(request.get("profitRate").toString());
+            BigDecimal cost = holdAmount.divide(BigDecimal.ONE.add(
+                    profitRate.divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP)), 10, RoundingMode.HALF_UP);
+            profit = holdAmount.subtract(cost);
+        } else if (request.containsKey("profit") && request.get("profit") != null
+                && !request.get("profit").toString().isEmpty()) {
+            profit = new BigDecimal(request.get("profit").toString());
+        } else {
+            profit = BigDecimal.ZERO;
+        }
+
+        BigDecimal costAmount = holdAmount.subtract(profit);
+        BigDecimal holdShare = holdAmount.divide(currentNAV, 2, RoundingMode.HALF_UP);
+        BigDecimal costPrice = holdShare.compareTo(BigDecimal.ZERO) > 0
+                ? costAmount.divide(holdShare, 4, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+
+        userFund.setHoldShare(holdShare);
+        userFund.setCostPrice(costPrice);
+        userFund.setHoldAmount(costAmount.setScale(2, RoundingMode.HALF_UP));
+    }
+
+    public void applyBuy(UserFund userFund, BigDecimal adjustShare, BigDecimal adjustCost) {
+        BigDecimal oldShare = userFund.getHoldShare() != null ? userFund.getHoldShare() : BigDecimal.ZERO;
+        BigDecimal oldCost = userFund.getCostPrice() != null ? userFund.getCostPrice() : BigDecimal.ZERO;
+        BigDecimal oldAmount = userFund.getHoldAmount() != null ? userFund.getHoldAmount() : BigDecimal.ZERO;
+
+        BigDecimal newShare = oldShare.add(adjustShare);
+        BigDecimal newAmount = oldAmount.add(adjustShare.multiply(adjustCost));
+        BigDecimal newCost = newShare.compareTo(BigDecimal.ZERO) > 0
+                ? newAmount.divide(newShare, 4, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+
+        userFund.setHoldShare(newShare);
+        userFund.setCostPrice(newCost);
+        userFund.setHoldAmount(newAmount.setScale(2, RoundingMode.HALF_UP));
+    }
+
+    public void applySell(UserFund userFund, BigDecimal adjustShare) {
+        BigDecimal oldShare = userFund.getHoldShare() != null ? userFund.getHoldShare() : BigDecimal.ZERO;
+        if (adjustShare.compareTo(oldShare) >= 0) {
+            adjustShare = oldShare;
+        }
+        BigDecimal newShare = oldShare.subtract(adjustShare);
+        BigDecimal costPrice = userFund.getCostPrice() != null ? userFund.getCostPrice() : BigDecimal.ZERO;
+        BigDecimal newAmount = newShare.multiply(costPrice).setScale(2, RoundingMode.HALF_UP);
+
+        userFund.setHoldShare(newShare);
+        userFund.setHoldAmount(newAmount);
     }
 }

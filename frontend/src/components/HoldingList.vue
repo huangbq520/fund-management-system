@@ -7,7 +7,7 @@
       </button>
     </div>
 
-    <div v-if="loading" class="loading">
+    <div v-if="fundStore.loading.holdings" class="loading">
       加载中...
     </div>
 
@@ -22,8 +22,8 @@
             <th class="col-name">基金名称</th>
             <th class="col-code">代码</th>
             <th class="col-amount">持仓金额</th>
-            <th class="col-change">昨日净值</th>
             <th class="col-estimate">估算涨幅</th>
+            <th class="col-yesterday">昨日收益</th>
             <th class="col-profit">当日收益</th>
             <th class="col-rate">持仓收益率</th>
             <th class="col-action">操作</th>
@@ -41,14 +41,14 @@
             </td>
             <td class="col-code">{{ holding.fundCode }}</td>
             <td class="col-amount">{{ formatNumber(holding.currentValue || holding.holdAmount) }}</td>
-            <td class="col-change">
-              {{ holding.yesterdayNetValue || '-' }}
-            </td>
             <td class="col-estimate">
-              <span :class="getChangeClass(holding.estimatedChange)">
+              <span :class="getProfitClass(holding.estimatedChange)">
                 {{ formatPercent(holding.estimatedChange) }}
               </span>
               <span class="estimate-time">{{ formatEstimateTime(holding.valuationTime) }}</span>
+            </td>
+            <td class="col-yesterday" :class="getProfitClass(holding.yesterdayProfit)">
+              {{ holding.yesterdayProfit != null ? formatProfit(holding.yesterdayProfit) : '--' }}
             </td>
             <td class="col-profit" :class="getProfitClass(holding.todayProfit)">
               {{ formatProfit(holding.todayProfit) }}
@@ -74,35 +74,25 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
-import { fundApi } from '../api'
+import { ref } from 'vue'
 import EditHoldingModal from './EditHoldingModal.vue'
+import { useFundStore } from '../stores/fundStore'
+import { storeToRefs } from 'pinia'
+import { formatNumber, formatProfit, formatPercent, getProfitClass } from '../composables/useFormat'
+import { useAutoRefresh, isTradingHours } from '../composables/useAutoRefresh'
 
 const emit = defineEmits(['update', 'view-detail'])
 
-const holdings = ref([])
-const loading = ref(false)
+const fundStore = useFundStore()
+const { holdings } = storeToRefs(fundStore)
+
 const showEditModal = ref(false)
 const selectedHolding = ref(null)
 
-let refreshTimer = null
-
-const loadHoldings = async () => {
-  loading.value = true
-  try {
-    const response = await fundApi.getHoldingList()
-    if (response.code === 200) {
-      holdings.value = response.data || []
-    }
-  } catch (err) {
-    console.error('Failed to load holdings:', err)
-  } finally {
-    loading.value = false
-  }
-}
+useAutoRefresh(() => fundStore.silentFetchHoldings(), 30000, isTradingHours)
 
 const refreshList = () => {
-  loadHoldings()
+  fundStore.fetchHoldings()
   emit('update')
 }
 
@@ -122,36 +112,8 @@ const closeEditModal = () => {
 
 const handleUpdateHolding = async () => {
   closeEditModal()
-  await loadHoldings()
+  await fundStore.fetchHoldings()
   emit('update')
-}
-
-const formatNumber = (value) => {
-  if (value === null || value === undefined) return '¥0.00'
-  const num = Number(value)
-  if (num >= 0) {
-    return '¥' + num.toLocaleString('zh-CN', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })
-  } else {
-    return '-' + '¥' + Math.abs(num).toLocaleString('zh-CN', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })
-  }
-}
-
-const formatProfit = (value) => {
-  if (value === null || value === undefined) return '+0.00'
-  const num = Number(value)
-  return (num >= 0 ? '+' : '') + num.toFixed(2)
-}
-
-const formatPercent = (value) => {
-  if (value === null || value === undefined) return '0.00%'
-  const num = Number(value)
-  return (num >= 0 ? '+' : '') + num.toFixed(2) + '%'
 }
 
 const formatEstimateTime = (timeStr) => {
@@ -169,29 +131,6 @@ const formatEstimateTime = (timeStr) => {
   }
   return str
 }
-
-const getChangeClass = (value) => {
-  if (value === null || value === undefined || Number(value) === 0) return 'profit-zero'
-  return Number(value) > 0 ? 'profit-positive' : 'profit-negative'
-}
-
-const getProfitClass = (value) => {
-  if (value === null || value === undefined || Number(value) === 0) return 'profit-zero'
-  return Number(value) > 0 ? 'profit-positive' : 'profit-negative'
-}
-
-onMounted(() => {
-  loadHoldings()
-  refreshTimer = setInterval(loadHoldings, 30000)
-})
-
-onUnmounted(() => {
-  if (refreshTimer) {
-    clearInterval(refreshTimer)
-  }
-})
-
-defineExpose({ refreshList })
 </script>
 
 <style scoped>
@@ -330,8 +269,14 @@ defineExpose({ refreshList })
   width: 100px;
 }
 
+.col-yesterday {
+  width: 95px;
+  text-align: right !important;
+  font-weight: 500;
+}
+
 .col-profit {
-  width: 110px;
+  width: 95px;
   text-align: right !important;
   font-weight: 500;
 }

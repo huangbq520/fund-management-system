@@ -36,22 +36,6 @@ public class FundData {
     private boolean priced;
     private Double estPricedCoverage;
 
-    public String getGsz() {
-        return estimatedNetValue;
-    }
-
-    public String getGztime() {
-        return valuationTime;
-    }
-
-    public Double getGszzl() {
-        return estimatedChange;
-    }
-
-    public String getDwjz() {
-        return unitNetValue;
-    }
-
     public String getJzrq() {
         return "";
     }

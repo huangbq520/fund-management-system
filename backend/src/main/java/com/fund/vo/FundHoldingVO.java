@@ -27,6 +27,8 @@ public class FundHoldingVO {
     private String profitSource;
     private Double yesterdayChange;
 
+    private BigDecimal yesterdayProfit;
+
     private Integer profitStatus;
     private BigDecimal todayProfitConfirmed;
     private Boolean isPostClose;

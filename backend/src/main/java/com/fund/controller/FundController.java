@@ -50,6 +50,18 @@ public class FundController {
         return (Long) request.getAttribute("userId");
     }
 
+    @GetMapping("/nav-at")
+    public ApiResponse<Map<String, Object>> getNavAt(
+            @RequestParam("code") String code,
+            @RequestParam("date") String date) {
+        logger.info("API: 查询历史净值, code={}, date={}", code, date);
+        BigDecimal nav = fundDataService.getNavByDate(code, date);
+        Map<String, Object> result = new HashMap<>();
+        result.put("date", date);
+        result.put("nav", nav);
+        return ApiResponse.success(result);
+    }
+
     @GetMapping("/data")
     public ApiResponse<FundData> getFundData(@RequestParam("code") String code) {
         logger.info("API: 获取基金数据, code={}", code);
@@ -191,10 +203,11 @@ public class FundController {
     }
 
     @PostMapping("/holding/update")
-    public ApiResponse<Void> updateHolding(@RequestBody Map<String, Object> request, HttpServletRequest httpRequest) {
+    public ApiResponse<FundHoldingVO> updateHolding(@RequestBody Map<String, Object> request, HttpServletRequest httpRequest) {
         Long userId = getUserId(httpRequest);
         String fundCode = (String) request.get("fundCode");
-        logger.info("API: 更新持仓, fundCode={}, userId={}", fundCode, userId);
+        String mode = request.containsKey("mode") ? (String) request.get("mode") : "SHARES";
+        logger.info("API: 更新持仓, fundCode={}, userId={}, mode={}", fundCode, userId, mode);
 
         if (fundCode == null || fundCode.trim().isEmpty()) {
             return ApiResponse.error("基金代码不能为空");
@@ -206,12 +219,24 @@ public class FundController {
                 return ApiResponse.error("持仓记录不存在");
             }
 
-            if (request.containsKey("holdShare")) {
-                userFund.setHoldShare(new BigDecimal(request.get("holdShare").toString()));
+            if ("AMOUNT".equals(mode)) {
+                fundHoldingService.applyModeTwo(userFund, request);
+            } else {
+                if (request.containsKey("holdShare")) {
+                    userFund.setHoldShare(new BigDecimal(request.get("holdShare").toString()));
+                }
+                if (request.containsKey("costPrice")) {
+                    userFund.setCostPrice(new BigDecimal(request.get("costPrice").toString()));
+                }
+                BigDecimal holdShare = userFund.getHoldShare();
+                BigDecimal costPrice = userFund.getCostPrice();
+                if (holdShare != null && costPrice != null
+                        && holdShare.compareTo(BigDecimal.ZERO) > 0
+                        && costPrice.compareTo(BigDecimal.ZERO) > 0) {
+                    userFund.setHoldAmount(holdShare.multiply(costPrice));
+                }
             }
-            if (request.containsKey("costPrice")) {
-                userFund.setCostPrice(new BigDecimal(request.get("costPrice").toString()));
-            }
+
             if (request.containsKey("buyDate")) {
                 String buyDateStr = (String) request.get("buyDate");
                 if (buyDateStr != null && !buyDateStr.isEmpty()) {
@@ -220,17 +245,94 @@ public class FundController {
                 }
             }
 
-            BigDecimal holdShare = userFund.getHoldShare();
-            BigDecimal costPrice = userFund.getCostPrice();
-            if (holdShare != null && costPrice != null && holdShare.compareTo(BigDecimal.ZERO) > 0 && costPrice.compareTo(BigDecimal.ZERO) > 0) {
-                userFund.setHoldAmount(holdShare.multiply(costPrice));
-            }
-
             userFundMapper.update(userFund);
-            return ApiResponse.success(null);
+            FundHoldingVO vo = fundHoldingService.getSingleHolding(userId, fundCode);
+            return ApiResponse.success(vo);
         } catch (Exception e) {
             logger.error("更新持仓失败: fundCode={}, error={}", fundCode, e.getMessage());
             return ApiResponse.error("更新持仓失败: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/holding/adjust")
+    public ApiResponse<FundHoldingVO> adjustHolding(@RequestBody Map<String, Object> request, HttpServletRequest httpRequest) {
+        Long userId = getUserId(httpRequest);
+        String fundCode = (String) request.get("fundCode");
+        String type = (String) request.get("type");
+        String adjustDateStr = (String) request.get("adjustDate");
+        Boolean before3pm = request.containsKey("before3pm") && Boolean.TRUE.equals(request.get("before3pm"));
+        logger.info("API: 调整持仓, fundCode={}, type={}, date={}, before3pm={}, userId={}",
+                fundCode, type, adjustDateStr, before3pm, userId);
+
+        if (fundCode == null || fundCode.trim().isEmpty()) {
+            return ApiResponse.error("基金代码不能为空");
+        }
+
+        try {
+            UserFund userFund = userFundMapper.findByUserIdAndFundCode(userId, fundCode);
+            if (userFund == null) {
+                return ApiResponse.error("持仓记录不存在");
+            }
+
+            BigDecimal adjustShare = new BigDecimal(request.get("adjustShare").toString());
+            BigDecimal effectiveNAV = null;
+
+            if (adjustDateStr != null && !adjustDateStr.isEmpty()) {
+                String navDate = adjustDateStr;
+                if (!before3pm) {
+                    java.time.LocalDate d = java.time.LocalDate.parse(adjustDateStr);
+                    navDate = d.plusDays(1).format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE);
+                }
+                effectiveNAV = fundDataService.getNavByDate(fundCode, navDate);
+                logger.info("历史净值查询: fundCode={}, date={}, navDate={}, nav={}", fundCode, adjustDateStr, navDate, effectiveNAV);
+            }
+
+            if ("BUY".equals(type)) {
+                if (effectiveNAV == null) {
+                    effectiveNAV = new BigDecimal(
+                        fundDataService.getFundData(fundCode).getEstimatedNetValue() != null
+                            ? fundDataService.getFundData(fundCode).getEstimatedNetValue() : "1");
+                }
+                fundHoldingService.applyBuy(userFund, adjustShare, effectiveNAV);
+            } else if ("SELL".equals(type)) {
+                fundHoldingService.applySell(userFund, adjustShare);
+            } else {
+                return ApiResponse.error("类型错误，只支持 BUY 或 SELL");
+            }
+
+            userFundMapper.update(userFund);
+            FundHoldingVO vo = fundHoldingService.getSingleHolding(userId, fundCode);
+            return ApiResponse.success(vo);
+        } catch (Exception e) {
+            logger.error("调整持仓失败: fundCode={}, error={}", fundCode, e.getMessage());
+            return ApiResponse.error("调整持仓失败: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/holding/clear")
+    public ApiResponse<Void> clearHolding(@RequestBody Map<String, String> request, HttpServletRequest httpRequest) {
+        Long userId = getUserId(httpRequest);
+        String fundCode = request.get("fundCode");
+        logger.info("API: 清仓, fundCode={}, userId={}", fundCode, userId);
+
+        if (fundCode == null || fundCode.trim().isEmpty()) {
+            return ApiResponse.error("基金代码不能为空");
+        }
+
+        try {
+            UserFund userFund = userFundMapper.findByUserIdAndFundCode(userId, fundCode);
+            if (userFund == null) {
+                return ApiResponse.error("持仓记录不存在");
+            }
+
+            userFund.setHoldShare(BigDecimal.ZERO);
+            userFund.setCostPrice(BigDecimal.ZERO);
+            userFund.setHoldAmount(BigDecimal.ZERO);
+            userFundMapper.update(userFund);
+            return ApiResponse.success(null);
+        } catch (Exception e) {
+            logger.error("清仓失败: fundCode={}, error={}", fundCode, e.getMessage());
+            return ApiResponse.error("清仓失败");
         }
     }
 

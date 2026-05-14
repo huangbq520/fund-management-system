@@ -81,9 +81,12 @@
 
 <script setup>
 import { ref } from 'vue'
-import { authApi, setToken, setUser } from '../api/auth'
+import { authApi } from '../api/auth'
+import { useAuthStore } from '../stores/authStore'
 
 const emit = defineEmits(['register-success', 'go-login'])
+
+const authStore = useAuthStore()
 
 const formData = ref({
   email: '',
@@ -139,7 +142,7 @@ const handleRegister = async () => {
   loading.value = true
 
   try {
-    const response = await authApi.register({
+    const response = await authStore.register({
       email: formData.value.email,
       nickname: formData.value.nickname,
       verifyCode: formData.value.verifyCode,
@@ -148,8 +151,6 @@ const handleRegister = async () => {
     })
 
     if (response.code === 200) {
-      setToken(response.data.token)
-      setUser(response.data.user)
       emit('register-success', response.data.user)
     } else {
       errorMsg.value = response.message || '注册失败'

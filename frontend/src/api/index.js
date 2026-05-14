@@ -51,12 +51,21 @@ export const fundApi = {
 
   getPortfolioSummary: () => api.get('/fund/portfolio/summary'),
 
-  updateHolding: (fundCode, holdShare, costPrice, buyDate) => api.post('/fund/holding/update', {
-    fundCode,
-    holdShare,
-    costPrice,
-    buyDate
-  })
+  updateHolding: (fundCode, payload) => api.post('/fund/holding/update', { fundCode, ...payload }),
+
+  adjustHolding: (fundCode, type, adjustShare, adjustCost, extra = {}) => api.post('/fund/holding/adjust', {
+    fundCode, type, adjustShare, adjustCost, ...extra
+  }),
+
+  clearHolding: (fundCode) => api.post('/fund/holding/clear', { fundCode }),
+
+  getNavAt: (code, date) => api.get(`/fund/nav-at?code=${code}&date=${date}`),
+
+  getFundDailyProfit: (fundCode, period = '6month') =>
+    api.get(`/fund/daily-profit/${fundCode}?period=${period}`),
+
+  getOverallDailyProfit: (period = '6month') =>
+    api.get(`/fund/daily-profit/overall?period=${period}`)
 }
 
 export default api

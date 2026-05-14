@@ -41,9 +41,11 @@
 
 <script setup>
 import { ref } from 'vue'
-import { authApi, setToken, setUser } from '../api/auth'
+import { useAuthStore } from '../stores/authStore'
 
 const emit = defineEmits(['login-success', 'go-register'])
+
+const authStore = useAuthStore()
 
 const formData = ref({
   email: '',
@@ -58,10 +60,8 @@ const handleLogin = async () => {
   loading.value = true
 
   try {
-    const response = await authApi.login(formData.value)
+    const response = await authStore.login(formData.value)
     if (response.code === 200) {
-      setToken(response.data.token)
-      setUser(response.data.user)
       emit('login-success', response.data.user)
     } else {
       errorMsg.value = response.message || '登录失败'

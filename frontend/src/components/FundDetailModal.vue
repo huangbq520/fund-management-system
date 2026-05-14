@@ -20,6 +20,7 @@
         <template v-else-if="detail">
           <div class="info-card">
             <div class="card-accent"></div>
+            <span class="val-time">{{ detail.gztime || '' }}</span>
             <h3>基本信息</h3>
             <div class="info-grid">
               <div class="info-item">
@@ -40,25 +41,46 @@
               </div>
               <div class="info-item">
                 <span class="label">估算涨跌幅</span>
-                <span class="value" :class="getChangeClass(detail.gszzl)">
-                  {{ formatPercent(detail.gszzl) }}
+                <span class="value" :class="getChangeClassLocal(detail.gszzl)">
+                  {{ formatPercentLocal(detail.gszzl) }}
                 </span>
               </div>
               <div class="info-item">
                 <span class="label">净值日期</span>
                 <span class="value">{{ detail.jzrq || '-' }}</span>
               </div>
+            </div>
+            <div class="holding-divider"></div>
+            <div class="info-grid">
               <div class="info-item">
-                <span class="label">估值时间</span>
-                <span class="value">{{ detail.gztime || '-' }}</span>
+                <span class="label">持仓金额</span>
+                <span class="value">{{ holdingInfo.holdAmount || '--' }}</span>
+              </div>
+              <div class="info-item">
+                <span class="label">当日收益</span>
+                <span class="value" :class="profitClass(holdingInfo.todayProfit)">{{ holdingInfo.todayProfit || '--' }}</span>
+              </div>
+              <div class="info-item">
+                <span class="label">持有收益</span>
+                <span class="value" :class="profitClass(holdingInfo.profitRate)">{{ holdingInfo.profitRate || '--' }}</span>
               </div>
             </div>
           </div>
 
           <div class="chart-card">
             <div class="card-accent"></div>
-            <h3>业绩走势</h3>
-            <FundTrendChart :fundCode="fundCode" />
+            <div class="chart-tabs">
+              <button
+                :class="['chart-tab', { active: chartTab === 'trend' }]"
+                @click="chartTab = 'trend'"
+              >业绩走势</button>
+              <button
+                :class="['chart-tab', { active: chartTab === 'myprofit' }]"
+                @click="chartTab = 'myprofit'"
+              >我的收益</button>
+            </div>
+            <FundTrendChart v-if="chartTab === 'trend'" :fundCode="fundCode" />
+            <MyProfitTab v-if="chartTab === 'myprofit'" :fundCode="fundCode" />
           </div>
 
           <div class="holdings-card">
@@ -70,6 +92,7 @@
                   <th class="col-index">序号</th>
                   <th class="col-code">股票代码</th>
                   <th class="col-name">股票名称</th>
+                  <th class="col-change">涨跌幅</th>
                   <th class="col-weight">占比</th>
                 </tr>
               </thead>
@@ -78,6 +101,9 @@
                   <td class="col-index">{{ index + 1 }}</td>
                   <td class="col-code">{{ holding.stockCode }}</td>
                   <td class="col-name">{{ holding.stockName }}</td>
+                  <td class="col-change" :class="getChangeClassLocal(holding.change)">
+                    {{ formatChange(holding.change) }}
+                  </td>
                   <td class="col-weight">
                     <span class="weight-badge">{{ holding.weight }}</span>
                   </td>
@@ -96,9 +122,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { fundApi } from '../api'
 import FundTrendChart from './FundTrendChart.vue'
+import MyProfitTab from './MyProfitTab.vue'
+import { formatPercent, getProfitClass } from '../composables/useFormat'
+import { useFundStore } from '../stores/fundStore'
+import { storeToRefs } from 'pinia'
 
 const props = defineProps({
   fundCode: {
@@ -109,9 +139,28 @@ const props = defineProps({
 
 const emit = defineEmits(['close'])
 
+const fundStore = useFundStore()
+const { holdings } = storeToRefs(fundStore)
+
 const loading = ref(false)
 const error = ref('')
 const detail = ref(null)
+const chartTab = ref('trend')
+
+const holdingInfo = computed(() => {
+  const h = holdings.value?.find(h => h.fundCode === props.fundCode)
+  if (!h) return {}
+  return {
+    holdAmount: h.holdAmount ? '¥' + Number(h.holdAmount).toLocaleString('zh-CN', { minimumFractionDigits: 2 }) : null,
+    todayProfit: h.todayProfit != null ? (Number(h.todayProfit) >= 0 ? '+' : '') + Number(h.todayProfit).toFixed(2) : null,
+    profitRate: h.profitRate != null ? (Number(h.profitRate) >= 0 ? '+' : '') + Number(h.profitRate).toFixed(2) + '%' : null
+  }
+})
+
+const profitClass = (val) => {
+  if (val === null || val === undefined) return ''
+  return Number(val) > 0 ? 'positive' : Number(val) < 0 ? 'negative' : ''
+}
 
 const loadDetail = async () => {
   loading.value = true
@@ -136,14 +185,12 @@ const handleClose = () => {
   emit('close')
 }
 
-const formatPercent = (value) => {
+const formatPercentLocal = (value) => formatPercent(value, { nullDisplay: '-' })
+const getChangeClassLocal = (value) => getProfitClass(value, { prefix: '', zeroClass: false })
+const formatChange = (value) => {
   if (value === null || value === undefined) return '-'
-  return (value > 0 ? '+' : '') + value.toFixed(2) + '%'
-}
-
-const getChangeClass = (value) => {
-  if (value === null || value === undefined) return ''
-  return value > 0 ? 'positive' : value < 0 ? 'negative' : ''
+  const n = Number(value)
+  return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'
 }
 
 watch(() => props.fundCode, () => {
@@ -307,12 +354,55 @@ onMounted(() => {
   background: linear-gradient(90deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
 }
 
+.val-time {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.holding-divider {
+  border-top: 1px dashed #e2e8f0;
+  margin: 8px 0 16px;
+}
+
 .info-card h3, .chart-card h3, .holdings-card h3 {
   margin: 0 0 20px 0;
   font-size: 16px;
   font-weight: 600;
   color: #333;
   padding-top: 8px;
+}
+
+.chart-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 16px;
+  padding-top: 8px;
+  border-bottom: 2px solid #f1f5f9;
+}
+
+.chart-tab {
+  padding: 10px 20px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 500;
+  color: #94a3b8;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.2s;
+}
+
+.chart-tab:hover {
+  color: #475569;
+}
+
+.chart-tab.active {
+  color: #667eea;
+  border-bottom-color: #667eea;
 }
 
 .info-grid {
@@ -427,6 +517,12 @@ onMounted(() => {
 
 .col-name {
   font-weight: 500 !important;
+}
+
+.col-change {
+  width: 90px;
+  text-align: right !important;
+  font-weight: 500;
 }
 
 .col-weight {
