@@ -119,10 +119,14 @@ public class DailyProfitService {
     }
 
     public DailyProfitVO getFundDailyProfit(Long userId, String fundCode, String period) {
+        logger.info("===== getFundDailyProfit 开始 =====");
+        logger.info("输入参数: userId={}, fundCode={}, period={}", userId, fundCode, period);
+        
         DailyProfitVO vo = new DailyProfitVO();
         vo.setFundCode(fundCode);
 
         UserFund userFund = userFundMapper.findByUserIdAndFundCode(userId, fundCode);
+        logger.info("查询用户持仓: userFund={}", userFund);
         if (userFund != null) {
             vo.setFundName(userFund.getFundName());
             vo.setHoldShare(userFund.getHoldShare());
@@ -130,11 +134,15 @@ public class DailyProfitService {
         }
 
         String startDate = computeStartDate(period);
+        logger.info("计算起始日期: startDate={}", startDate);
+        
         List<FundDailyProfit> records;
         if (startDate != null) {
             records = fundDailyProfitMapper.selectByUserAndFundSince(userId, fundCode, startDate);
+            logger.info("使用 selectByUserAndFundSince 查询，结果数: {}", (records == null ? 0 : records.size()));
         } else {
             records = fundDailyProfitMapper.selectByUserAndFund(userId, fundCode);
+            logger.info("使用 selectByUserAndFund 查询，结果数: {}", (records == null ? 0 : records.size()));
         }
 
         List<DailyProfitVO.CurvePoint> curve = new ArrayList<>();
@@ -207,6 +215,11 @@ public class DailyProfitService {
         vo.setSummary(summary);
         vo.setProfitCurve(curve);
         vo.setDetailList(details);
+        
+        logger.info("===== getFundDailyProfit 结束 =====");
+        logger.info("返回的 profitCurve 数量: {}", (curve == null ? 0 : curve.size()));
+        logger.info("返回的 detailList 数量: {}", (details == null ? 0 : details.size()));
+        
         return vo;
     }
 

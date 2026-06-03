@@ -22,4 +22,7 @@ public interface UserMapper {
 
     @Select("SELECT COUNT(*) FROM user WHERE email = #{email}")
     int countByEmail(@Param("email") String email);
+    
+    @Select("SELECT * FROM user ORDER BY id ASC LIMIT 1")
+    User selectFirstUser();
 }

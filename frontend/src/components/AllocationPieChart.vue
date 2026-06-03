@@ -11,6 +11,8 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useFundStore } from '../stores/fundStore'
 import { storeToRefs } from 'pinia'
 
+const emit = defineEmits(['view-detail'])
+
 const echartsLib = window.echarts
 
 const fundStore = useFundStore()
@@ -22,8 +24,8 @@ let chartInstance = null
 const hasData = computed(() => holdings.value && holdings.value.length > 0)
 
 const colors = [
-  '#1677ff', '#1677ff', '#69b1ff', '#4facfe', '#43e97b',
-  '#fa709a', '#fee140', '#30cfd0', '#a8c0ff', '#8b5cf6'
+  '#1677ff', '#52c41a', '#faad14', '#f5222d', '#722ed1',
+  '#13c2c2', '#eb2f96', '#fa8c16', '#2f54eb', '#10239e'
 ]
 
 const renderChart = () => {
@@ -94,6 +96,15 @@ const renderChart = () => {
   }
 
   chartInstance.setOption(option)
+  
+  // 添加点击事件
+  chartInstance.off('click')
+  chartInstance.on('click', (params) => {
+    const holding = holdings.value.find(h => (h.fundName || h.fundCode) === params.name)
+    if (holding) {
+      emit('view-detail', holding.fundCode)
+    }
+  })
 }
 
 const handleResize = () => {

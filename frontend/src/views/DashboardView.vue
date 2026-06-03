@@ -40,11 +40,11 @@
 
   <main class="app-main">
     <section class="market-section">
-      <MarketIndex />
+      <MarketIndex @select="openQuote" />
     </section>
 
     <section class="summary-section">
-      <PortfolioSummary />
+      <PortfolioSummary @view-detail="handleViewDetail" />
     </section>
 
     <section class="list-section">
@@ -59,17 +59,26 @@
       :fund-code="currentFundCode"
       @close="closeDetail"
     />
+
+    <IndexQuoteModal
+      v-if="quoteIndex"
+      :visible="!!quoteIndex"
+      :index-code="quoteIndex.code"
+      :index-name="quoteIndex.name"
+      @close="closeQuote"
+    />
   </main>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import MarketIndex from '../components/MarketIndex.vue'
 import SearchFund from '../components/SearchFund.vue'
 import PortfolioSummary from '../components/PortfolioSummary.vue'
 import HoldingList from '../components/HoldingList.vue'
 import FundDetailModal from '../components/FundDetailModal.vue'
+import IndexQuoteModal from '../components/IndexQuoteModal.vue'
 import UserMenu from '../components/UserMenu.vue'
 import { useFundStore } from '../stores/fundStore'
 
@@ -79,6 +88,15 @@ const fundStore = useFundStore()
 
 const showDetail = computed(() => !!route.params.fundCode)
 const currentFundCode = computed(() => route.params.fundCode || '')
+const quoteIndex = ref(null)
+
+const openQuote = (index) => {
+  quoteIndex.value = index
+}
+
+const closeQuote = () => {
+  quoteIndex.value = null
+}
 
 const handleAddFund = async (fundCode, fundName) => {
   await fundStore.addFund(fundCode, fundName)

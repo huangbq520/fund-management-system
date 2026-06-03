@@ -34,11 +34,18 @@ const router = createRouter({
 
 router.beforeEach((to, from, next) => {
   const token = getToken()
+  
+  // 需要认证的路由
   if (to.meta.requiresAuth && !token) {
+    // 保存原始访问路径，登录后可以重定向回去
+    sessionStorage.setItem('redirectAfterLogin', to.fullPath)
     next('/auth')
-  } else if (to.meta.guest && token) {
+  } 
+  // 游客路由（已登录用户不能访问）
+  else if (to.meta.guest && token) {
     next('/')
-  } else {
+  } 
+  else {
     next()
   }
 })

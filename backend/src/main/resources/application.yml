@@ -24,6 +24,10 @@ spring:
           auth: true
           starttls:
             enable: true
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
 
 mybatis:
   mapper-locations: classpath:mapper/*.xml
@@ -43,3 +47,9 @@ cors:
 jwt:
   secret: fund-management-secret-key-2024-very-long-secret-for-hs256
   expiration: 86400000
+
+baidu:
+  ocr:
+    app-id: 123482067
+    api-key: DhAAeNhMYU6ACvZqGuabrCIX
+    secret-key: 88qSrWKvfROmKWKnuGBTOWjkF6Qsf2VL

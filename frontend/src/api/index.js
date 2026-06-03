@@ -1,12 +1,12 @@
 import axios from 'axios'
-import { getToken } from './auth'
+import { getToken, removeToken, removeUser } from './auth'
+
+// 防止重复跳转
+let isRedirecting = false
 
 const api = axios.create({
   baseURL: '/api',
-  timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json'
-  }
+  timeout: 30000
 })
 
 api.interceptors.request.use(
@@ -26,6 +26,26 @@ api.interceptors.response.use(
   response => response.data,
   error => {
     console.error('API Error:', error)
+
+    // 处理 401 未授权
+    if (error.response && error.response.status === 401) {
+      if (!isRedirecting) {
+        isRedirecting = true
+
+        // 清除本地认证信息
+        removeToken()
+        removeUser()
+
+        // 跳转到登录页
+        window.location.href = '#/auth'
+
+        // 延迟重置标志，避免短时间内重复跳转
+        setTimeout(() => {
+          isRedirecting = false
+        }, 1000)
+      }
+    }
+
     return Promise.reject(error)
   }
 )
@@ -66,6 +86,23 @@ export const fundApi = {
 
   getOverallDailyProfit: (period = '6month') =>
     api.get(`/fund/daily-profit/overall?period=${period}`)
+}
+
+export const marketApi = {
+  getIndices: () => api.get('/market/indices'),
+
+  getKline: (code, startDate, endDate, klt = '101') =>
+    api.get(`/market/kline?code=${code}&startDate=${startDate}&endDate=${endDate}&klt=${klt}`),
+
+  getRealtime: (code) => api.get(`/market/realtime?code=${code}`)
+}
+
+export const ocrApi = {
+  recognize: (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/ocr/recognize', formData)
+  }
 }
 
 export default api

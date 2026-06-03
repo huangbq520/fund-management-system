@@ -1,5 +1,11 @@
 <template>
   <div class="search-fund" :class="{ 'compact': compact, 'expanded': isExpanded }" @click="focusInput">
+    <button v-if="compact" class="camera-btn" @click.stop="showOcrModal = true" title="拍照识别基金代码">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+        <circle cx="12" cy="13" r="4"/>
+      </svg>
+    </button>
     <input
       ref="inputRef"
       v-model="searchKeyword"
@@ -56,6 +62,8 @@
       <button @click="handleAdd" class="add-btn">添加</button>
       <button @click="clearSelection" class="clear-btn">清除</button>
     </div>
+
+    <OcrModal :visible="showOcrModal" @close="showOcrModal = false" @select-fund="handleOcrSelect" />
   </div>
 </template>
 
@@ -64,6 +72,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useFundStore } from '../stores/fundStore'
 import { storeToRefs } from 'pinia'
 import { useToast } from '../composables/useToast'
+import OcrModal from './OcrModal.vue'
 
 const props = defineProps({
   compact: {
@@ -86,6 +95,7 @@ const error = ref('')
 const showDropdown = ref(false)
 const hasSearched = ref(false)
 const isExpanded = ref(false)
+const showOcrModal = ref(false)
 
 let debounceTimer = null
 let clickOutsideHandler = null
@@ -212,6 +222,13 @@ const highlightKeyword = (text) => {
   return text.replace(regex, '<span class="highlight">$1</span>')
 }
 
+const handleOcrSelect = (text) => {
+  searchKeyword.value = text
+  selectedFund.value = null
+  showOcrModal.value = false
+  performSearch()
+}
+
 const handleClickOutside = (event) => {
   const searchFund = document.querySelector('.search-fund')
   if (searchFund && !searchFund.contains(event.target)) {
@@ -273,8 +290,33 @@ onUnmounted(() => {
   background: #fafbfc;
 }
 
+.search-fund.compact .camera-btn {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: #999;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.2s;
+  z-index: 2;
+  padding: 0;
+}
+
+.search-fund.compact .camera-btn:hover {
+  color: #1677ff;
+  background: rgba(22, 119, 255, 0.08);
+}
+
 .search-fund.compact .search-input {
-  padding: 10px 50px 10px 16px;
+  padding: 10px 50px 10px 44px;
   border-radius: 20px;
   font-size: 14px;
   background: rgba(255, 255, 255, 0.7);
@@ -308,6 +350,10 @@ onUnmounted(() => {
   cursor: pointer;
   transition: all 0.3s;
   box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .search-fund.compact .search-btn {
@@ -319,6 +365,10 @@ onUnmounted(() => {
   font-size: 13px;
   box-shadow: none;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .search-btn:hover:not(:disabled) {

@@ -1,8 +1,10 @@
 package com.fund.controller;
 
 import com.fund.entity.Fund;
+import com.fund.entity.User;
 import com.fund.entity.UserFund;
 import com.fund.mapper.FundMapper;
+import com.fund.mapper.UserMapper;
 import com.fund.mapper.UserFundMapper;
 import com.fund.service.FundDataService;
 import com.fund.service.FundHoldingService;
@@ -41,13 +43,21 @@ public class FundController {
     private FundMapper fundMapper;
 
     @Resource
+    private UserMapper userMapper;
+
+    @Resource
     private UserFundMapper userFundMapper;
 
     @Resource
     private FundHoldingService fundHoldingService;
 
     private Long getUserId(HttpServletRequest request) {
-        return (Long) request.getAttribute("userId");
+        Long userId = (Long) request.getAttribute("userId");
+        if (userId == null) {
+            logger.warn("未从JWT找到用户ID，用户未登录！");
+            return null;
+        }
+        return userId;
     }
 
     @GetMapping("/nav-at")

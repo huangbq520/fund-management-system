@@ -5,6 +5,7 @@
       :key="index.code"
       class="index-item"
       :class="getIndexClass(index)"
+      @click="emit('select', index)"
     >
       <div class="index-name">{{ index.name }}</div>
       <div class="index-price">{{ formatPrice(index.price) }}</div>
@@ -23,6 +24,8 @@ import { useAutoRefresh, isTradingHours } from '../composables/useAutoRefresh'
 
 const marketStore = useMarketStore()
 const { indices } = storeToRefs(marketStore)
+
+const emit = defineEmits(['select'])
 
 useAutoRefresh(() => marketStore.fetchIndices(), 30000, isTradingHours)
 
@@ -69,6 +72,12 @@ const getIndexClass = (index) => {
   border-radius: 8px;
   background: #f8f9fa;
   transition: all 0.3s;
+  cursor: pointer;
+}
+
+.index-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .index-item.up {

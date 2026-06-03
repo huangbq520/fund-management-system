@@ -1,13 +1,13 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import api from '../api'
+import { marketApi } from '../api'
 
 export const useMarketStore = defineStore('market', () => {
   const indices = ref([])
 
   async function fetchIndices() {
     try {
-      const response = await api.get('/market/indices')
+      const response = await marketApi.getIndices()
       if (response.code === 200 && response.data) {
         indices.value = response.data
       }

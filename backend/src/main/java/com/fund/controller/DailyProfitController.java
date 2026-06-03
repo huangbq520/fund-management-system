@@ -1,5 +1,7 @@
 package com.fund.controller;
 
+import com.fund.entity.User;
+import com.fund.mapper.UserMapper;
 import com.fund.service.DailyProfitService;
 import com.fund.vo.ApiResponse;
 import com.fund.vo.DailyProfitVO;
@@ -19,6 +21,9 @@ public class DailyProfitController {
 
     @Resource
     private DailyProfitService dailyProfitService;
+    
+    @Resource
+    private UserMapper userMapper;
 
     @PostMapping("/daily-profit/calculate")
     public ApiResponse<String> triggerCalculation() {
@@ -33,7 +38,13 @@ public class DailyProfitController {
     }
 
     private Long getUserId(HttpServletRequest request) {
-        return (Long) request.getAttribute("userId");
+        Long userId = (Long) request.getAttribute("userId");
+        if (userId == null) {
+            logger.warn("未从JWT找到用户ID，用户未登录！");
+            return null;
+        }
+        logger.info("从JWT获取到用户ID: {}", userId);
+        return userId;
     }
 
     @GetMapping("/daily-profit/overall")
@@ -42,6 +53,10 @@ public class DailyProfitController {
             @RequestParam(value = "period", defaultValue = "6month") String period) {
         Long userId = getUserId(request);
         logger.info("API: 查询用户整体每日收益, userId={}, period={}", userId, period);
+
+        if (userId == null) {
+            return ApiResponse.error(401, "请先登录后再查看收益数据");
+        }
 
         if (!isValidPeriod(period)) {
             return ApiResponse.error("无效的周期参数，支持: 1month, 3month, 6month, 1year, 3year, all");
@@ -58,6 +73,10 @@ public class DailyProfitController {
             @RequestParam(value = "period", defaultValue = "6month") String period) {
         Long userId = getUserId(request);
         logger.info("API: 查询单基金每日收益, userId={}, fundCode={}, period={}", userId, fundCode, period);
+
+        if (userId == null) {
+            return ApiResponse.error(401, "请先登录后再查看收益数据");
+        }
 
         if (fundCode == null || fundCode.trim().isEmpty()) {
             return ApiResponse.error("基金代码不能为空");

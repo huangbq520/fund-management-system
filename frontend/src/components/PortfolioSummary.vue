@@ -21,7 +21,7 @@
       </div>
     </div>
 
-    <AllocationPieChart />
+    <AllocationPieChart @view-detail="handleViewDetail" />
   </div>
 </template>
 
@@ -32,10 +32,16 @@ import { formatNumber, formatProfit, formatPercent, getProfitClass } from '../co
 import { useAutoRefresh, isTradingHours } from '../composables/useAutoRefresh'
 import AllocationPieChart from './AllocationPieChart.vue'
 
+const emit = defineEmits(['view-detail'])
+
 const fundStore = useFundStore()
 const { summary } = storeToRefs(fundStore)
 
 useAutoRefresh(() => fundStore.silentFetchSummary(), 30000, isTradingHours)
+
+const handleViewDetail = (fundCode) => {
+  emit('view-detail', fundCode)
+}
 </script>
 
 <style scoped>

@@ -10,7 +10,8 @@
     </div>
 
     <div v-else-if="error" class="error">
-      {{ error }}
+      <div class="error-icon">🔐</div>
+      <div class="error-text">{{ error }}</div>
     </div>
 
     <template v-else-if="data">
@@ -125,15 +126,25 @@ const fetchData = async () => {
   loading.value = true
   error.value = ''
   try {
+    console.log('[MyProfitTab] 开始获取收益数据，基金代码:', props.fundCode, '周期:', period.value)
     const res = await fundApi.getFundDailyProfit(props.fundCode, period.value)
+    console.log('[MyProfitTab] API 响应结果:', res)
+    
     if (res.code === 200) {
       data.value = res.data
+      console.log('[MyProfitTab] 设置数据:', data.value)
+      // 等待两次 nextTick，确保 DOM 完全更新
       await nextTick()
+      await nextTick()
+      console.log('[MyProfitTab] nextTick 后 chartRef:', chartRef.value)
       renderChart()
+    } else if (res.code === 401) {
+      error.value = res.message || '请先登录后再查看收益数据'
     } else {
       error.value = res.message || '加载失败'
     }
-  } catch {
+  } catch (err) {
+    console.error('[MyProfitTab] 获取数据失败:', err)
     error.value = '加载失败，请稍后重试'
   } finally {
     loading.value = false
@@ -176,89 +187,76 @@ const formatMoney = (val) => {
 }
 
 const renderChart = () => {
-  if (!chartRef.value || !echartsLib || !data.value?.profitCurve?.length) return
-
-  if (chartInstance) {
-    chartInstance.dispose()
-    chartInstance = null
+  console.log('===== renderChart 开始 =====')
+  
+  if (!echartsLib) {
+    console.log('没有 echartsLib！')
+    return
   }
-
-  chartInstance = echartsLib.init(chartRef.value)
-
-  const curve = data.value.profitCurve
-  const dates = curve.map(p => formatShortDate(p.recordDate))
-  const cumValues = curve.map(p => Number(p.cumulativeProfit))
-  const dailyValues = curve.map(p => Number(p.dailyProfit))
-
-  const allVals = [...cumValues, ...dailyValues]
-  const yMin = Math.min(...allVals, 0)
-  const yMax = Math.max(...allVals, 0)
-  const yPad = Math.max((yMax - yMin) * 0.1, 20)
-
-  const isOverallPositive = cumValues.length > 0 && cumValues[cumValues.length - 1] >= 0
-  const lineColor = isOverallPositive ? colors.up : colors.down
-
-  const option = {
-    animation: true,
-    animationDuration: 800,
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: 'rgba(15,23,42,0.92)',
-      borderWidth: 0,
-      textStyle: { color: '#e2e8f0', fontSize: 12 },
-      formatter: (params) => {
-        const idx = params[0]?.dataIndex
-        if (idx == null) return ''
-        const p = curve[idx]
-        const cumSign = p.cumulativeProfit >= 0 ? '+' : ''
-        const dailySign = p.dailyProfit >= 0 ? '+' : ''
-        return `<div style="font-weight:600;margin-bottom:6px">${p.recordDate}</div>
-          <div>累计收益: <span style="color:${p.cumulativeProfit >= 0 ? colors.up : colors.down};font-weight:600">${cumSign}${Number(p.cumulativeProfit).toFixed(2)}</span></div>
-          <div>当日收益: <span style="color:${p.dailyProfit >= 0 ? colors.up : colors.down}">${dailySign}${Number(p.dailyProfit).toFixed(2)}</span></div>
-          <div>收益率: ${Number(p.dailyReturnRate) >= 0 ? '+' : ''}${Number(p.dailyReturnRate).toFixed(2)}%</div>`
+  
+  if (!data.value || !data.value.profitCurve || data.value.profitCurve.length === 0) {
+    console.log('没有数据！')
+    return
+  }
+  
+  // 轮询检查 DOM 是否存在
+  let attempts = 0
+  const tryInit = () => {
+    attempts++
+    console.log(`尝试初始化图表，第 ${attempts} 次...`)
+    console.log('chartRef.value:', chartRef.value)
+    
+    if (!chartRef.value) {
+      if (attempts < 10) {
+        setTimeout(tryInit, 100) // 100ms 后重试
+      } else {
+        console.log('图表容器 DOM 不存在！')
       }
-    },
-    grid: { left: '3%', right: '4%', bottom: '10%', top: '8%', containLabel: true },
-    xAxis: {
-      type: 'category',
-      boundaryGap: false,
-      data: dates,
-      axisLine: { lineStyle: { color: colors.grid } },
-      axisTick: { show: false },
-      axisLabel: { color: '#64748b', fontSize: 10, interval: Math.floor(dates.length / 6) }
-    },
-    yAxis: {
-      type: 'value',
-      min: yMin - yPad,
-      max: yMax + yPad,
-      splitLine: { lineStyle: { color: '#f1f5f9', type: 'dashed' } },
-      axisLabel: { color: '#64748b', fontSize: 10, formatter: (v) => v.toFixed(0) }
-    },
-    series: [
-      {
-        type: 'line',
-        name: '累计收益',
-        data: cumValues,
-        smooth: 0.4,
-        symbol: 'none',
-        lineStyle: { width: 2.5, color: lineColor },
-        areaStyle: {
-          color: new echartsLib.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: `${lineColor}30` },
-            { offset: 1, color: `${lineColor}05` }
-          ])
-        },
-        markLine: {
-          silent: true,
-          symbol: 'none',
-          data: [{ yAxis: 0 }],
-          lineStyle: { color: '#94a3b8', type: 'dashed', width: 1 }
+      return
+    }
+    
+    console.log('DOM 找到了！开始初始化 ECharts')
+    if (chartInstance) {
+      chartInstance.dispose()
+      chartInstance = null
+    }
+    
+    chartInstance = echartsLib.init(chartRef.value)
+    
+    const curve = data.value.profitCurve
+    const dates = curve.map(p => formatShortDate(p.recordDate))
+    const cumValues = curve.map(p => Number(p.cumulativeProfit))
+    
+    console.log('准备好数据了！')
+    console.log('dates:', dates)
+    console.log('cumValues:', cumValues)
+    
+    const option = {
+      tooltip: { trigger: 'axis' },
+      grid: { left: '10%', right: '10%', bottom: '10%', top: '10%' },
+      xAxis: {
+        type: 'category',
+        data: dates
+      },
+      yAxis: {
+        type: 'value'
+      },
+      series: [
+        {
+          type: 'line',
+          data: cumValues,
+          smooth: true,
+          areaStyle: { opacity: 0.3 }
         }
-      }
-    ]
+      ]
+    }
+    
+    console.log('设置 option')
+    chartInstance.setOption(option)
+    console.log('===== renderChart 完成 =====')
   }
-
-  chartInstance.setOption(option)
+  
+  tryInit()
 }
 
 const handleResize = () => {
@@ -272,7 +270,17 @@ watch(() => props.fundCode, (newCode) => {
   }
 })
 
-onMounted(() => {
+// 监听数据变化，确保有数据时渲染图表
+watch(() => data.value, async (newData) => {
+  if (newData && newData.profitCurve && newData.profitCurve.length > 0) {
+    console.log('数据变化，准备渲染图表')
+    await nextTick()
+    await nextTick()
+    renderChart()
+  }
+}, { deep: true })
+
+onMounted(async () => {
   if (props.fundCode) fetchData()
   window.addEventListener('resize', handleResize)
 })
@@ -385,6 +393,8 @@ onUnmounted(() => {
 .chart-canvas {
   width: 100%;
   height: 300px;
+  background: #f8fafc;
+  border-radius: 8px;
 }
 
 .detail-section h4 {
@@ -429,6 +439,26 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   padding: 50px;
+}
+
+.error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.error-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.error-text {
+  color: #64748b;
+  font-size: 16px;
+  line-height: 1.6;
 }
 
 .pl {
