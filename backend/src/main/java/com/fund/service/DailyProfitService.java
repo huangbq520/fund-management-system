@@ -72,7 +72,9 @@ public class DailyProfitService {
                     continue;
                 }
 
-                String recordDate = LocalDate.now(BEIJING_ZONE).format(DateTimeFormatter.ISO_LOCAL_DATE);
+                // 记录日期使用最新净值对应的日期
+                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+                String recordDate = sdf.format(new Date(Long.parseLong(todayTrend.getDate())));
 
                 FundDailyProfit existing = fundDailyProfitMapper.selectByUserFundDate(
                         uf.getUserId(), uf.getFundCode(), recordDate);
@@ -110,12 +112,22 @@ public class DailyProfitService {
 
             } catch (Exception e) {
                 logger.error("统计收益失败: fundCode={}, userId={}, error={}",
-                        uf.getFundCode(), uf.getUserId(), e.getMessage());
+                        uf.getFundCode(), uf.getUserId(), e.getMessage(), e);
                 failCount++;
             }
         }
 
         logger.info("每日收益统计完成: 成功={}, 跳过={}, 失败={}", successCount, skipCount, failCount);
+    }
+
+    public void recalculateAllDailyProfit() {
+        logger.info("开始重新计算所有每日收益...");
+        // 先清空所有旧数据
+        fundDailyProfitMapper.deleteAll();
+        logger.info("已清空所有旧收益数据");
+        // 然后重新计算
+        calculateDailyProfit();
+        logger.info("重新计算所有每日收益完成!");
     }
 
     public DailyProfitVO getFundDailyProfit(Long userId, String fundCode, String period) {
@@ -133,70 +145,185 @@ public class DailyProfitService {
             vo.setCostPrice(userFund.getCostPrice());
         }
 
-        String startDate = computeStartDate(period);
-        logger.info("计算起始日期: startDate={}", startDate);
-        
-        List<FundDailyProfit> records;
-        if (startDate != null) {
-            records = fundDailyProfitMapper.selectByUserAndFundSince(userId, fundCode, startDate);
-            logger.info("使用 selectByUserAndFundSince 查询，结果数: {}", (records == null ? 0 : records.size()));
-        } else {
-            records = fundDailyProfitMapper.selectByUserAndFund(userId, fundCode);
-            logger.info("使用 selectByUserAndFund 查询，结果数: {}", (records == null ? 0 : records.size()));
+        // 获取用户购买日期作为起始日期
+        LocalDate userBuyDate = null;
+        if (userFund != null && userFund.getBuyDate() != null) {
+            userBuyDate = userFund.getBuyDate().toInstant().atZone(BEIJING_ZONE).toLocalDate();
+            logger.info("用户购买日期: userBuyDate={}", userBuyDate);
         }
 
+        // 获取周期起始日期
+        String periodStartDate = computeStartDate(period);
+        logger.info("周期起始日期: periodStartDate={}", periodStartDate);
+
+        // 获取基金历史数据
+        FundData fundData = fundDataService.getFundData(fundCode);
+        List<FundHistoryTrend> historyTrends = fundData.getHistoryTrend();
+        logger.info("历史数据条数: {}", historyTrends != null ? historyTrends.size() : 0);
+
+        if (historyTrends == null || historyTrends.size() < 2) {
+            logger.info("历史数据不足，直接返回空数据");
+            // 返回空结果
+            vo.setSummary(new DailyProfitVO.Summary());
+            vo.setProfitCurve(new ArrayList<>());
+            vo.setDetailList(new ArrayList<>());
+            return vo;
+        }
+
+        // 先对历史数据按时间戳升序排序
+        historyTrends.sort(Comparator.comparing(t -> {
+            try {
+                return Long.parseLong(t.getDate());
+            } catch (Exception e) {
+                return 0L;
+            }
+        }));
+
+        // 获取数据库中已有的记录，先转换为Map方便查找
+        List<FundDailyProfit> dbRecords = fundDailyProfitMapper.selectByUserAndFund(userId, fundCode);
+        Map<String, FundDailyProfit> dbRecordMap = new HashMap<>();
+        if (dbRecords != null) {
+            for (FundDailyProfit r : dbRecords) {
+                dbRecordMap.put(formatDate(r.getRecordDate()), r);
+            }
+        }
+
+        // 准备最终数据
         List<DailyProfitVO.CurvePoint> curve = new ArrayList<>();
         List<DailyProfitVO.DetailItem> details = new ArrayList<>();
         BigDecimal cumulative = BigDecimal.ZERO;
-
         BigDecimal totalProfit = BigDecimal.ZERO;
         BigDecimal maxProfit = null;
         BigDecimal maxLoss = null;
         String maxProfitDate = null;
         String maxLossDate = null;
+        int validTradingDays = 0;
 
-        for (FundDailyProfit r : records) {
-            cumulative = cumulative.add(r.getDailyProfit());
+        // 获取用户持有的份额，如果没有份额就用默认值
+        BigDecimal holdShare = (userFund != null && userFund.getHoldShare() != null) 
+            ? userFund.getHoldShare() : BigDecimal.ZERO;
 
+        // 遍历历史数据，从第2条开始计算收益
+        for (int i = 1; i < historyTrends.size(); i++) {
+            FundHistoryTrend todayTrend = historyTrends.get(i);
+            FundHistoryTrend yesterdayTrend = historyTrends.get(i - 1);
+
+            // 转换日期
+            String recordDate = formatTrendDate(todayTrend.getDate());
+            LocalDate trendDate = LocalDate.parse(recordDate);
+
+            // 1. 如果有购买日期，只展示购买日期之后的数据
+            if (userBuyDate != null && trendDate.isBefore(userBuyDate)) {
+                continue;
+            }
+
+            // 2. 如果有周期起始日期，只展示周期内的数据
+            if (periodStartDate != null) {
+                LocalDate periodStartLocal = LocalDate.parse(periodStartDate);
+                if (trendDate.isBefore(periodStartLocal)) {
+                    continue;
+                }
+            }
+
+            // 计算当日收益
+            BigDecimal todayNAV = todayTrend.getNetValue() != null ? BigDecimal.valueOf(todayTrend.getNetValue()) : null;
+            BigDecimal yesterdayNAV = yesterdayTrend.getNetValue() != null ? BigDecimal.valueOf(yesterdayTrend.getNetValue()) : null;
+            
+            if (todayNAV == null || yesterdayNAV == null || yesterdayNAV.compareTo(BigDecimal.ZERO) == 0) {
+                continue;
+            }
+
+            // 先看看数据库中有没有这条记录
+            FundDailyProfit dbRecord = dbRecordMap.get(recordDate);
+            BigDecimal dailyProfit = null;
+            BigDecimal dailyReturnRate = null;
+            BigDecimal netValue = null;
+            BigDecimal recordHoldShare = holdShare;
+            BigDecimal holdAmount = null;
+
+            if (dbRecord != null) {
+                // 用数据库的记录
+                dailyProfit = dbRecord.getDailyProfit();
+                dailyReturnRate = dbRecord.getDailyReturnRate();
+                netValue = dbRecord.getNetValue();
+                recordHoldShare = dbRecord.getHoldShare();
+                holdAmount = dbRecord.getHoldAmount();
+                logger.info("使用数据库记录: date={}, profit={}", recordDate, dailyProfit);
+            } else {
+                // 数据库没有，我们计算一个
+                dailyProfit = recordHoldShare.multiply(todayNAV.subtract(yesterdayNAV)).setScale(2, RoundingMode.HALF_UP);
+                dailyReturnRate = todayNAV.subtract(yesterdayNAV)
+                    .divide(yesterdayNAV, 8, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(100))
+                    .setScale(4, RoundingMode.HALF_UP);
+                netValue = todayNAV.setScale(4, RoundingMode.HALF_UP);
+                holdAmount = recordHoldShare.multiply(todayNAV).setScale(2, RoundingMode.HALF_UP);
+                logger.info("计算的记录: date={}, profit={}", recordDate, dailyProfit);
+                
+                // 可选：如果想保存到数据库，就保存
+                try {
+                    FundDailyProfit newRecord = new FundDailyProfit();
+                    newRecord.setUserId(userId);
+                    newRecord.setFundCode(fundCode);
+                    newRecord.setFundName(userFund != null ? userFund.getFundName() : fundCode);
+                    newRecord.setRecordDate(java.sql.Date.valueOf(recordDate));
+                    newRecord.setDailyProfit(dailyProfit);
+                    newRecord.setDailyReturnRate(dailyReturnRate);
+                    newRecord.setNetValue(netValue);
+                    newRecord.setHoldShare(recordHoldShare);
+                    newRecord.setHoldAmount(holdAmount);
+                    fundDailyProfitMapper.insert(newRecord);
+                } catch (Exception e) {
+                    logger.warn("插入新记录失败: date={}, error={}", recordDate, e.getMessage());
+                }
+            }
+
+            // 累加
+            cumulative = cumulative.add(dailyProfit);
+            totalProfit = totalProfit.add(dailyProfit);
+            validTradingDays++;
+
+            // 更新最大收益和最大亏损
+            if (maxProfit == null || dailyProfit.compareTo(maxProfit) > 0) {
+                maxProfit = dailyProfit;
+                maxProfitDate = recordDate;
+            }
+            if (maxLoss == null || dailyProfit.compareTo(maxLoss) < 0) {
+                maxLoss = dailyProfit;
+                maxLossDate = recordDate;
+            }
+
+            // 构建曲线点
             DailyProfitVO.CurvePoint point = new DailyProfitVO.CurvePoint();
-            point.setRecordDate(formatDate(r.getRecordDate()));
-            point.setDailyProfit(r.getDailyProfit());
+            point.setRecordDate(recordDate);
+            point.setDailyProfit(dailyProfit);
             point.setCumulativeProfit(cumulative.setScale(2, RoundingMode.HALF_UP));
-            point.setDailyReturnRate(r.getDailyReturnRate());
-            point.setNetValue(r.getNetValue());
+            point.setDailyReturnRate(dailyReturnRate);
+            point.setNetValue(netValue);
             curve.add(point);
 
+            // 构建明细项，添加到前面（最新的在前面）
             DailyProfitVO.DetailItem detail = new DailyProfitVO.DetailItem();
-            detail.setRecordDate(formatDate(r.getRecordDate()));
-            detail.setDailyProfit(r.getDailyProfit());
-            detail.setDailyReturnRate(r.getDailyReturnRate());
-            detail.setNetValue(r.getNetValue());
-            detail.setHoldShare(r.getHoldShare());
-            detail.setHoldAmount(r.getHoldAmount());
+            detail.setRecordDate(recordDate);
+            detail.setDailyProfit(dailyProfit);
+            detail.setDailyReturnRate(dailyReturnRate);
+            detail.setNetValue(netValue);
+            detail.setHoldShare(recordHoldShare);
+            detail.setHoldAmount(holdAmount);
             details.add(0, detail);
-
-            totalProfit = totalProfit.add(r.getDailyProfit());
-
-            if (maxProfit == null || r.getDailyProfit().compareTo(maxProfit) > 0) {
-                maxProfit = r.getDailyProfit();
-                maxProfitDate = formatDate(r.getRecordDate());
-            }
-            if (maxLoss == null || r.getDailyProfit().compareTo(maxLoss) < 0) {
-                maxLoss = r.getDailyProfit();
-                maxLossDate = formatDate(r.getRecordDate());
-            }
         }
 
+        // 构建总结
         DailyProfitVO.Summary summary = new DailyProfitVO.Summary();
         summary.setTotalProfit(totalProfit.setScale(2, RoundingMode.HALF_UP));
         summary.setMaxDailyProfit(maxProfit != null ? maxProfit.setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO);
         summary.setMaxDailyLoss(maxLoss != null ? maxLoss.setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO);
         summary.setMaxProfitDate(maxProfitDate);
         summary.setMaxLossDate(maxLossDate);
-        summary.setTradingDays(records.size());
+        summary.setTradingDays(validTradingDays);
 
-        if (!records.isEmpty()) {
-            summary.setAvgDailyProfit(totalProfit.divide(BigDecimal.valueOf(records.size()), 2, RoundingMode.HALF_UP));
+        if (validTradingDays > 0) {
+            summary.setAvgDailyProfit(totalProfit.divide(BigDecimal.valueOf(validTradingDays), 2, RoundingMode.HALF_UP));
         } else {
             summary.setAvgDailyProfit(BigDecimal.ZERO);
         }

@@ -1,6 +1,7 @@
 package com.fund.service;
 
 import com.fund.entity.Fund;
+import com.fund.entity.FundDailyProfit;
 import com.fund.entity.UserFund;
 import com.fund.mapper.FundDailyProfitMapper;
 import com.fund.mapper.FundMapper;
@@ -188,10 +189,25 @@ public class FundHoldingService {
         vo.setValuationTime(fundData.getValuationTime());
         vo.setYesterdayNetValue(fundData.getYesterdayNetValue());
         vo.setYesterdayChange(fundData.getYesterdayChange());
+        vo.setLatestNetValueDate(fundData.getLatestNetValueDate());
 
-        String yesterdayDate = LocalDate.now(BEIJING_ZONE).minusDays(1).format(DateTimeFormatter.ISO_LOCAL_DATE);
-        BigDecimal yesterdayProfit = fundDailyProfitMapper.getProfitByDate(fund.getUserId(), fund.getFundCode(), yesterdayDate);
+        // 计算持仓成本金额和设置持仓成本净值
+        vo.setCostPrice(fund.getCostPrice());
+        if (fund.getCostPrice() != null && fund.getHoldShare() != null) {
+            BigDecimal costAmount = fund.getCostPrice().multiply(fund.getHoldShare()).setScale(2, RoundingMode.HALF_UP);
+            vo.setCostAmount(costAmount);
+        }
+
+        // 直接从历史数据计算昨日收益，确保是正确的
+        BigDecimal yesterdayProfit = calculateYesterdayProfitFromHistory(fund, fundData);
+        
         vo.setYesterdayProfit(yesterdayProfit != null ? yesterdayProfit : BigDecimal.ZERO);
+
+        vo.setOneWeekChange(fundData.getOneWeekChange());
+        vo.setOneMonthChange(fundData.getOneMonthChange());
+        vo.setThreeMonthChange(fundData.getThreeMonthChange());
+        vo.setSixMonthChange(fundData.getSixMonthChange());
+        vo.setOneYearChange(fundData.getOneYearChange());
 
         BigDecimal holdShare = fund.getHoldShare() != null ? fund.getHoldShare() : BigDecimal.ZERO;
         BigDecimal todayBuyShare = fund.getTodayBuyShare() != null ? fund.getTodayBuyShare() : BigDecimal.ZERO;
@@ -308,24 +324,13 @@ public class FundHoldingService {
         BigDecimal currentValue = shareForToday.multiply(currentNetValueBD);
         vo.setCurrentValue(currentValue.setScale(2, RoundingMode.HALF_UP));
 
-        String yesterdayNetValue = fundData.getYesterdayNetValue();
+        // 优先使用估算涨幅计算当日收益，确保实时更新
         BigDecimal todayProfit;
         String profitSource;
-
-        if (yesterdayNetValue != null && !yesterdayNetValue.isEmpty() && !yesterdayNetValue.equals("null")) {
-            try {
-                BigDecimal yesterdayNetValueBD = new BigDecimal(yesterdayNetValue);
-                todayProfit = shareForToday.multiply(currentNetValueBD.subtract(yesterdayNetValueBD));
-                profitSource = PROFIT_SOURCE_YESTERDAY_NET_VALUE;
-            } catch (NumberFormatException e) {
-                logger.warn("解析昨日净值失败: fundCode={}, value={}", fund.getFundCode(), yesterdayNetValue);
-                todayProfit = calculateProfitByChangePercent(currentValue, fundData.getEstimatedChange());
-                profitSource = PROFIT_SOURCE_CHANGEPCT;
-            }
-        } else {
-            todayProfit = calculateProfitByChangePercent(currentValue, fundData.getEstimatedChange());
-            profitSource = PROFIT_SOURCE_CHANGEPCT;
-        }
+        
+        // 使用估算涨幅计算当日收益
+        todayProfit = calculateProfitByChangePercent(currentValue, fundData.getEstimatedChange());
+        profitSource = PROFIT_SOURCE_CHANGEPCT;
 
         vo.setTodayProfit(todayProfit.setScale(2, RoundingMode.HALF_UP));
         vo.setProfitSource(profitSource);
@@ -455,5 +460,42 @@ public class FundHoldingService {
 
         userFund.setHoldShare(newShare);
         userFund.setHoldAmount(newAmount);
+    }
+
+    /**
+     * 从历史数据计算昨日收益
+     */
+    private BigDecimal calculateYesterdayProfitFromHistory(Fund fund, FundData fundData) {
+        List<com.fund.vo.FundHistoryTrend> trends = fundData.getHistoryTrend();
+        if (trends == null || trends.size() < 2) {
+            return BigDecimal.ZERO;
+        }
+
+        // 按时间排序
+        trends.sort((t1, t2) -> {
+            try {
+                long time1 = Long.parseLong(t1.getDate());
+                long time2 = Long.parseLong(t2.getDate());
+                return Long.compare(time1, time2);
+            } catch (Exception e) {
+                return 0;
+            }
+        });
+
+        // 获取最新两条净值数据
+        com.fund.vo.FundHistoryTrend latestTrend = trends.get(trends.size() - 1);
+        com.fund.vo.FundHistoryTrend previousTrend = trends.get(trends.size() - 2);
+
+        if (latestTrend.getNetValue() == null || previousTrend.getNetValue() == null
+            || previousTrend.getNetValue() <= 0) {
+            return BigDecimal.ZERO;
+        }
+
+        BigDecimal latestNAV = BigDecimal.valueOf(latestTrend.getNetValue());
+        BigDecimal previousNAV = BigDecimal.valueOf(previousTrend.getNetValue());
+        BigDecimal holdShare = fund.getHoldShare() != null ? fund.getHoldShare() : BigDecimal.ZERO;
+
+        // 昨日收益 = 持有份额 × (最新净值 - 前一天净值)
+        return holdShare.multiply(latestNAV.subtract(previousNAV)).setScale(2, RoundingMode.HALF_UP);
     }
 }

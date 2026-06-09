@@ -32,4 +32,15 @@ public class FundHoldingVO {
     private Integer profitStatus;
     private BigDecimal todayProfitConfirmed;
     private Boolean isPostClose;
+
+    private Double oneWeekChange;
+    private Double oneMonthChange;
+    private Double threeMonthChange;
+    private Double sixMonthChange;
+    private Double oneYearChange;
+
+    private String latestNetValueDate;
+
+    // 持仓成本金额和持仓成本净值
+    private BigDecimal costAmount;
 }

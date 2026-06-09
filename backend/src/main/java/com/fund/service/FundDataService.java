@@ -325,25 +325,32 @@ public class FundDataService {
             if (response == null || response.isEmpty()) {
                 fundData.setHistorySuccess(false);
                 fundData.getErrorMessages().add("东方财富走势接口返回为空");
-                logger.warn("东方财富走势接口返回为空: fundCode={}", fundCode);
                 return;
             }
 
             parseNetWorthTrend(response, fundData);
-
             parseCompareIndices(response, fundData);
+            calculatePeriodRatesFromHistory(fundData);
 
             fundData.setHistorySuccess(true);
-            logger.info("东方财富走势数据获取成功: fundCode={}, historyCount={}, compareCount={}",
-                    fundCode,
-                    fundData.getHistoryTrend() != null ? fundData.getHistoryTrend().size() : 0,
-                    fundData.getCompareIndices() != null ? fundData.getCompareIndices().size() : 0);
-
         } catch (Exception e) {
             fundData.setHistorySuccess(false);
             fundData.getErrorMessages().add("获取历史走势失败: " + e.getMessage());
-            logger.error("获取历史走势失败: fundCode={}, error={}", fundCode, e.getMessage());
+            logger.error("获取历史走势失败: fundCode={}, error={}", fundCode, e.getMessage(), e);
         }
+    }
+
+    private void calculatePeriodRatesFromHistory(FundData fundData) {
+        List<FundHistoryTrend> trends = fundData.getHistoryTrend();
+        if (trends == null || trends.size() < 2) {
+            return;
+        }
+        
+        fundData.setOneWeekChange(calculatePeriodReturn(filterByPeriod(trends, "1week")));
+        fundData.setOneMonthChange(calculatePeriodReturn(filterByPeriod(trends, "1month")));
+        fundData.setThreeMonthChange(calculatePeriodReturn(filterByPeriod(trends, "3month")));
+        fundData.setSixMonthChange(calculatePeriodReturn(filterByPeriod(trends, "6month")));
+        fundData.setOneYearChange(calculatePeriodReturn(filterByPeriod(trends, "1year")));
     }
 
     private void parseNetWorthTrend(String response, FundData fundData) {
@@ -412,7 +419,31 @@ public class FundDataService {
             }
         }
 
+        // 对历史数据按照时间戳从小到大排序（最早在前，最新在后）
+        trends.sort((t1, t2) -> {
+            try {
+                long time1 = Long.parseLong(t1.getDate());
+                long time2 = Long.parseLong(t2.getDate());
+                return Long.compare(time1, time2);
+            } catch (Exception e) {
+                logger.warn("排序历史数据时解析日期失败: t1={}, t2={}, error={}", t1.getDate(), t2.getDate(), e.getMessage());
+                return 0;
+            }
+        });
+
         fundData.setHistoryTrend(trends);
+
+        if (trends.size() >= 1) {
+            // 保存最新净值日期
+            FundHistoryTrend last = trends.get(trends.size() - 1);
+            try {
+                SimpleDateFormat sdf = new SimpleDateFormat("MM-dd");
+                String formattedDate = sdf.format(new Date(Long.parseLong(last.getDate())));
+                fundData.setLatestNetValueDate(formattedDate);
+            } catch (Exception e) {
+                logger.warn("解析最新净值日期失败: error={}", e.getMessage());
+            }
+        }
 
         if (trends.size() >= 2) {
             FundHistoryTrend last = trends.get(trends.size() - 1);
@@ -612,6 +643,9 @@ public class FundDataService {
         long startTime;
 
         switch (period) {
+            case "1week":
+                startTime = now - 7L * 24 * 60 * 60 * 1000;
+                break;
             case "1month":
                 startTime = now - 30L * 24 * 60 * 60 * 1000;
                 break;

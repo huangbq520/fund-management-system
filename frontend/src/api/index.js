@@ -85,7 +85,9 @@ export const fundApi = {
     api.get(`/fund/daily-profit/${fundCode}?period=${period}`),
 
   getOverallDailyProfit: (period = '6month') =>
-    api.get(`/fund/daily-profit/overall?period=${period}`)
+    api.get(`/fund/daily-profit/overall?period=${period}`),
+
+  deleteBatch: (fundCodes) => api.post('/fund/delete/batch', { fundCodes })
 }
 
 export const marketApi = {

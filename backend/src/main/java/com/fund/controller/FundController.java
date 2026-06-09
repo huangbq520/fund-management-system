@@ -9,6 +9,7 @@ import com.fund.mapper.UserFundMapper;
 import com.fund.service.FundDataService;
 import com.fund.service.FundHoldingService;
 import com.fund.service.FundSearchService;
+import com.fund.service.DailyProfitService;
 import com.fund.vo.ApiResponse;
 import com.fund.vo.FundData;
 import com.fund.vo.FundHoldingVO;
@@ -50,6 +51,9 @@ public class FundController {
 
     @Resource
     private FundHoldingService fundHoldingService;
+
+    @Resource
+    private DailyProfitService dailyProfitService;
 
     private Long getUserId(HttpServletRequest request) {
         Long userId = (Long) request.getAttribute("userId");
@@ -363,6 +367,40 @@ public class FundController {
         } catch (Exception e) {
             logger.error("删除基金失败: fundCode={}, error={}", fundCode, e.getMessage());
             return ApiResponse.error("删除基金失败");
+        }
+    }
+
+    @PostMapping("/delete/batch")
+    public ApiResponse<Void> deleteFundsBatch(@RequestBody Map<String, Object> request, HttpServletRequest httpRequest) {
+        Long userId = getUserId(httpRequest);
+        List<String> fundCodes = (List<String>) request.get("fundCodes");
+        logger.info("API: 批量删除基金, fundCodes={}, userId={}", fundCodes, userId);
+
+        if (fundCodes == null || fundCodes.isEmpty()) {
+            return ApiResponse.error("基金代码列表不能为空");
+        }
+
+        try {
+            for (String fundCode : fundCodes) {
+                userFundMapper.deleteByUserIdAndFundCode(userId, fundCode);
+                fundMapper.deleteByCode(fundCode, userId);
+            }
+            return ApiResponse.success(null);
+        } catch (Exception e) {
+            logger.error("批量删除基金失败: fundCodes={}, error={}", fundCodes, e.getMessage());
+            return ApiResponse.error("批量删除基金失败");
+        }
+    }
+
+    @PostMapping("/daily-profit/recalculate")
+    public ApiResponse<String> recalculateDailyProfit() {
+        logger.info("API: 重新计算所有每日收益");
+        try {
+            dailyProfitService.recalculateAllDailyProfit();
+            return ApiResponse.success("重新计算完成");
+        } catch (Exception e) {
+            logger.error("重新计算每日收益失败: {}", e.getMessage(), e);
+            return ApiResponse.error("重新计算失败: " + e.getMessage());
         }
     }
 }

@@ -1,10 +1,34 @@
 <template>
-  <div class="holding-list">
+  <div class="holding-list" :class="{ 'is-batch-delete': isBatchDeleteMode }">
     <div class="list-header">
       <h2>我的持仓</h2>
-      <button @click="refreshList" class="refresh-btn">
-        <span>刷新</span>
-      </button>
+      <div class="header-buttons">
+        <button @click="refreshList" class="refresh-btn">
+          <span>刷新</span>
+        </button>
+        <button 
+          v-if="!isBatchDeleteMode"
+          @click="startBatchDelete" 
+          class="batch-btn"
+        >
+          <span>删除</span>
+        </button>
+        <div v-else class="batch-actions">
+          <button 
+            @click="handleBatchDelete" 
+            class="delete-btn"
+            :disabled="selectedFundCodes.size === 0"
+          >
+            删除
+          </button>
+          <button 
+            @click="cancelBatchDelete" 
+            class="cancel-btn"
+          >
+            取消
+          </button>
+        </div>
+      </div>
     </div>
 
     <div v-if="fundStore.loading.holdings" class="loading">
@@ -24,13 +48,30 @@
       <table class="holding-table">
         <thead>
           <tr>
+            <th v-if="isBatchDeleteMode" class="col-checkbox">
+              <input 
+                type="checkbox" 
+                :checked="isAllSelected"
+                @change="toggleSelectAll"
+                class="checkbox"
+              />
+            </th>
             <th class="col-name">基金名称</th>
             <th class="col-code">代码</th>
+            <th class="col-latest-change">最新涨幅</th>
+            <th class="col-latest-net-value">最新净值</th>
             <th class="col-amount">持仓金额</th>
             <th class="col-estimate">估算涨幅</th>
             <th class="col-yesterday">昨日收益</th>
             <th class="col-profit">当日收益</th>
             <th class="col-rate">持仓收益率</th>
+            <th class="col-week">近一周</th>
+            <th class="col-month">近一月</th>
+            <th class="col-three-month">近三月</th>
+            <th class="col-six-month">近六月</th>
+            <th class="col-year">近一年</th>
+            <th class="col-cost-price">成本净值</th>
+            <th class="col-cost-amount">持仓成本</th>
             <th class="col-action">操作</th>
           </tr>
         </thead>
@@ -39,13 +80,35 @@
             v-for="holding in holdings"
             :key="holding.fundCode"
             class="table-row"
-            @click="viewDetail(holding.fundCode)"
+            @click="!isBatchDeleteMode && viewDetail(holding.fundCode)"
           >
+            <td v-if="isBatchDeleteMode" class="col-checkbox" @click.stop>
+              <input 
+                type="checkbox" 
+                :checked="selectedFundCodes.has(holding.fundCode)"
+                @change="toggleSelectFund(holding.fundCode)"
+                class="checkbox"
+              />
+            </td>
             <td class="col-name">
               <div class="fund-name">{{ holding.fundName || holding.fundCode }}</div>
             </td>
             <td class="col-code">{{ holding.fundCode }}</td>
-            <td class="col-amount">{{ formatNumber(holding.currentValue != null ? holding.currentValue : holding.holdAmount) }}</td>
+            <td class="col-latest-change">
+              <div class="latest-container">
+                <span :class="getProfitClass(holding.yesterdayChange)">
+                  {{ formatPercent(holding.yesterdayChange) }}
+                </span>
+                <span class="latest-date">{{ holding.latestNetValueDate || formatLatestDate(holding) }}</span>
+              </div>
+            </td>
+            <td class="col-latest-net-value">
+              <div class="latest-container">
+                <span>{{ holding.unitNetValue }}</span>
+                <span class="latest-date">{{ holding.latestNetValueDate || formatLatestDate(holding) }}</span>
+              </div>
+            </td>
+            <td class="col-amount">{{ shouldShowPlaceholder(holding) ? '--' : formatNumber(holding.currentValue != null ? holding.currentValue : holding.holdAmount) }}</td>
             <td class="col-estimate">
               <span :class="getProfitClass(holding.estimatedChange)">
                 {{ formatPercent(holding.estimatedChange) }}
@@ -53,13 +116,44 @@
               <span class="estimate-time">{{ formatEstimateTime(holding.valuationTime) }}</span>
             </td>
             <td class="col-yesterday" :class="getProfitClass(holding.yesterdayProfit)">
-              {{ holding.yesterdayProfit != null ? formatProfit(holding.yesterdayProfit) : '--' }}
+              <div class="yesterday-container">
+                <span class="yesterday-profit">
+                  {{ shouldShowPlaceholder(holding) ? '--' : (holding.yesterdayProfit != null ? formatProfit(holding.yesterdayProfit) : '--') }}
+                </span>
+                <span 
+                  v-if="!shouldShowPlaceholder(holding) && holding.yesterdayChange != null" 
+                  :class="['yesterday-rate', getProfitClass(holding.yesterdayChange)]"
+                >
+                  {{ formatPercent(holding.yesterdayChange) }}
+                </span>
+              </div>
             </td>
             <td class="col-profit" :class="getProfitClass(holding.todayProfit)">
-              {{ formatProfit(holding.todayProfit) }}
+              {{ shouldShowPlaceholder(holding) ? '--' : formatProfit(holding.todayProfit) }}
             </td>
             <td class="col-rate" :class="getProfitClass(holding.profitRate)">
-              {{ formatPercent(holding.profitRate) }}
+              {{ shouldShowPlaceholder(holding) ? '--' : formatPercent(holding.profitRate) }}
+            </td>
+            <td class="col-week" :class="getProfitClass(holding.oneWeekChange)">
+              {{ holding.oneWeekChange != null ? formatPercent(holding.oneWeekChange) : '--' }}
+            </td>
+            <td class="col-month" :class="getProfitClass(holding.oneMonthChange)">
+              {{ holding.oneMonthChange != null ? formatPercent(holding.oneMonthChange) : '--' }}
+            </td>
+            <td class="col-three-month" :class="getProfitClass(holding.threeMonthChange)">
+              {{ holding.threeMonthChange != null ? formatPercent(holding.threeMonthChange) : '--' }}
+            </td>
+            <td class="col-six-month" :class="getProfitClass(holding.sixMonthChange)">
+              {{ holding.sixMonthChange != null ? formatPercent(holding.sixMonthChange) : '--' }}
+            </td>
+            <td class="col-year" :class="getProfitClass(holding.oneYearChange)">
+              {{ holding.oneYearChange != null ? formatPercent(holding.oneYearChange) : '--' }}
+            </td>
+            <td class="col-cost-price">
+              {{ shouldShowPlaceholder(holding) ? '--' : (holding.costPrice != null ? (Number(holding.costPrice)).toFixed(2) : '--') }}
+            </td>
+            <td class="col-cost-amount">
+              {{ shouldShowPlaceholder(holding) ? '--' : (holding.costAmount != null ? formatNumber(holding.costAmount) : '--') }}
             </td>
             <td class="col-action" @click.stop>
               <button @click="editHolding(holding)" class="edit-btn">
@@ -87,7 +181,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import EditHoldingModal from './EditHoldingModal.vue'
 import { useFundStore } from '../stores/fundStore'
 import { storeToRefs } from 'pinia'
@@ -101,6 +195,12 @@ const { holdings } = storeToRefs(fundStore)
 
 const showEditModal = ref(false)
 const selectedHolding = ref(null)
+const isBatchDeleteMode = ref(false)
+const selectedFundCodes = ref(new Set())
+
+const isAllSelected = computed(() => {
+  return holdings.value.length > 0 && selectedFundCodes.value.size === holdings.value.length
+})
 
 useAutoRefresh(() => fundStore.silentFetchHoldings(), 30000, isTradingHours)
 
@@ -144,6 +244,108 @@ const formatEstimateTime = (timeStr) => {
   }
   return str
 }
+
+const shouldShowPlaceholder = (holding) => {
+  const holdAmount = holding.currentValue != null ? holding.currentValue : holding.holdAmount
+  return !holdAmount || holdAmount === 0
+}
+
+const calculateYesterdayRate = (holding) => {
+  if (!holding.yesterdayProfit || !holding.holdAmount || holding.holdAmount === 0) {
+    return null
+  }
+  // 计算昨天的收益率，使用昨日收益 / (当前市值 - 昨日收益)
+  const yesterdayValue = (holding.currentValue != null ? holding.currentValue : holding.holdAmount) - holding.yesterdayProfit
+  if (!yesterdayValue || yesterdayValue === 0) {
+    return null
+  }
+  return (holding.yesterdayProfit / yesterdayValue) * 100
+}
+
+const formatLatestDate = (holding) => {
+  // 尝试多种方式获取日期
+  if (holding.valuationTime) {
+    const str = String(holding.valuationTime)
+    if (str.includes('-') && str.includes(' ')) {
+      const parts = str.split(' ')
+      if (parts.length >= 1) {
+        const dateParts = parts[0].split('-')
+        if (dateParts.length >= 3) {
+          return `${dateParts[1]}-${dateParts[2]}`
+        }
+      }
+    }
+  }
+  
+  // 默认使用今天的日期
+  const today = new Date()
+  const month = String(today.getMonth() + 1).padStart(2, '0')
+  const day = String(today.getDate()).padStart(2, '0')
+  return `${month}-${day}`
+}
+
+const startBatchDelete = () => {
+  isBatchDeleteMode.value = true
+  selectedFundCodes.value.clear()
+}
+
+const cancelBatchDelete = () => {
+  isBatchDeleteMode.value = false
+  selectedFundCodes.value.clear()
+}
+
+const toggleSelectFund = (fundCode) => {
+  const newSet = new Set(selectedFundCodes.value)
+  if (newSet.has(fundCode)) {
+    newSet.delete(fundCode)
+  } else {
+    newSet.add(fundCode)
+  }
+  selectedFundCodes.value = newSet
+}
+
+const toggleSelectAll = (event) => {
+  if (event.target.checked) {
+    selectedFundCodes.value = new Set(holdings.value.map(h => h.fundCode))
+  } else {
+    selectedFundCodes.value.clear()
+  }
+}
+
+const handleBatchDelete = async () => {
+  if (selectedFundCodes.value.size === 0) {
+    alert('请先选择要删除的基金')
+    return
+  }
+
+  const fundCodesArray = [...selectedFundCodes.value]
+  console.log('准备删除的基金代码:', fundCodesArray)
+
+  const confirmed = confirm(`确认删除选中 ${fundCodesArray.length} 条持仓数据？删除后数据不可恢复。`)
+  if (!confirmed) {
+    return
+  }
+
+  try {
+    console.log('开始调用删除接口...')
+    const response = await fundStore.deleteBatch(fundCodesArray)
+    console.log('删除接口响应:', response)
+    
+    if (response.code === 200) {
+      console.log('删除成功，刷新列表')
+      cancelBatchDelete()
+      await fundStore.fetchHoldings()
+      await fundStore.fetchSummary()
+      emit('update')
+      alert('删除成功')
+    } else {
+      alert(response.message || '删除失败')
+    }
+  } catch (error) {
+    console.error('删除失败，详细错误:', error)
+    alert('删除失败: ' + (error.message || '未知错误'))
+  }
+}
 </script>
 
 <style scoped>
@@ -159,6 +361,118 @@ const formatEstimateTime = (timeStr) => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+}
+
+.header-buttons {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.batch-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.batch-btn,
+.delete-btn,
+.cancel-btn {
+  background: transparent;
+  position: relative;
+  padding: 5px 15px;
+  display: flex;
+  align-items: center;
+  font-size: 17px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  border: 1px solid #f56c6c;
+  border-radius: 25px;
+  outline: none;
+  overflow: hidden;
+  color: #f56c6c;
+  transition: color 0.3s 0.1s ease-out, opacity 0.2s;
+  text-align: center;
+}
+
+.batch-btn span,
+.delete-btn span,
+.cancel-btn span {
+  margin: 10px;
+}
+
+.delete-btn {
+  border-color: #f56c6c;
+  color: #f56c6c;
+}
+
+.delete-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cancel-btn {
+  border-color: #909399;
+  color: #909399;
+}
+
+.batch-btn::before,
+.delete-btn::before,
+.cancel-btn::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: auto;
+  content: '';
+  border-radius: 50%;
+  display: block;
+  width: 20em;
+  height: 20em;
+  left: -5em;
+  text-align: center;
+  transition: box-shadow 0.5s ease-out;
+  z-index: -1;
+}
+
+.batch-btn:hover {
+  color: #fff;
+  border: 1px solid #f56c6c;
+}
+
+.batch-btn:hover::before {
+  box-shadow: inset 0 0 0 10em #f56c6c;
+}
+
+.delete-btn:not(:disabled):hover {
+  color: #fff;
+  border: 1px solid #f56c6c;
+}
+
+.delete-btn:not(:disabled):hover::before {
+  box-shadow: inset 0 0 0 10em #f56c6c;
+}
+
+.cancel-btn:hover {
+  color: #fff;
+  border: 1px solid #909399;
+}
+
+.cancel-btn:hover::before {
+  box-shadow: inset 0 0 0 10em #909399;
+}
+
+.col-checkbox {
+  width: 50px;
+  text-align: center;
+}
+
+.checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
 }
 
 .list-header h2 {
@@ -234,7 +548,8 @@ const formatEstimateTime = (timeStr) => {
 .holding-table {
   width: 100%;
   border-collapse: collapse;
-  table-layout: fixed;
+  table-layout: auto;
+  min-width: 2000px;
 }
 
 .holding-table th,
@@ -252,6 +567,42 @@ const formatEstimateTime = (timeStr) => {
   letter-spacing: 0.3px;
 }
 
+.holding-table th.col-action {
+  position: sticky;
+  right: 0;
+  z-index: 20;
+  background-color: #f8fafc;
+}
+
+.holding-table th.col-name {
+  position: sticky;
+  left: 0;
+  z-index: 20;
+  background-color: #f8fafc;
+}
+
+.holding-table th.col-checkbox {
+  position: sticky;
+  left: 0;
+  z-index: 25;
+  background-color: #f8fafc;
+}
+
+.col-checkbox {
+  width: 50px;
+  text-align: center;
+  position: sticky;
+  left: 0;
+  z-index: 15;
+  background-color: white;
+}
+
+/* 当有复选框列时，基金名称列在复选框列的右侧 */
+.is-batch-delete .holding-table th.col-name,
+.is-batch-delete .col-name {
+  left: 50px;
+}
+
 .table-row {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
@@ -262,8 +613,19 @@ const formatEstimateTime = (timeStr) => {
 .table-row:hover {
   background: #f0f5ff;
   box-shadow: 0 4px 16px rgba(22, 119, 255, 0.12);
-  z-index: 10;
-  position: relative;
+}
+
+/* 确保固定列的背景色与行背景同步变化 */
+.table-row .col-name,
+.table-row .col-action,
+.table-row .col-checkbox {
+  transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.table-row:hover .col-name,
+.table-row:hover .col-action,
+.table-row:hover .col-checkbox {
+  background-color: #f0f5ff;
 }
 
 .table-row:last-child td {
@@ -278,6 +640,10 @@ const formatEstimateTime = (timeStr) => {
 .col-name {
   text-align: left !important;
   width: 160px;
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  background-color: white;
 }
 
 .col-name .fund-name {
@@ -290,6 +656,31 @@ const formatEstimateTime = (timeStr) => {
   width: 90px;
   color: #999;
   font-size: 13px;
+}
+
+.col-cost-price,
+.col-cost-amount {
+  width: 110px;
+  font-size: 14px;
+}
+
+.col-latest-change,
+.col-latest-net-value {
+  width: 100px;
+  font-size: 14px;
+}
+
+.latest-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.latest-date {
+  font-size: 11px;
+  color: #999;
+  line-height: 1.2;
 }
 
 .col-amount {
@@ -317,10 +708,23 @@ const formatEstimateTime = (timeStr) => {
 }
 
 .col-yesterday {
-  width: 95px;
+  width: 110px;
   text-align: right !important;
   font-weight: 500;
   font-size: 14px;
+}
+
+.yesterday-container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.yesterday-rate {
+  font-size: 11px;
+  line-height: 1.2;
+  color: #999;
 }
 
 .col-profit {
@@ -331,15 +735,28 @@ const formatEstimateTime = (timeStr) => {
 }
 
 .col-action {
-  width: 80px;
+  width: 90px;
+  position: sticky;
+  right: 0;
+  z-index: 10;
+  background-color: white;
+}
+
+.col-week,
+.col-month,
+.col-three-month,
+.col-six-month,
+.col-year {
+  width: 85px;
+  font-size: 14px;
 }
 
 .edit-btn {
   position: relative;
   transition: all 0.3s ease-in-out;
   box-shadow: 0px 10px 20px rgba(0, 0, 0, 0.2);
-  padding-block: 0.5rem;
-  padding-inline: 1.25rem;
+  padding-block: 0.35rem;
+  padding-inline: 0.8rem;
   background-color: rgb(0 107 179);
   border-radius: 9999px;
   display: flex;
@@ -347,17 +764,20 @@ const formatEstimateTime = (timeStr) => {
   justify-content: center;
   cursor: pointer;
   color: #ffff;
-  gap: 10px;
+  gap: 6px;
   font-weight: bold;
-  border: 3px solid #ffffff4d;
+  border: 2px solid #ffffff4d;
   outline: none;
   overflow: hidden;
-  font-size: 15px;
+  font-size: 13px;
+  white-space: nowrap;
+  min-width: auto;
+  width: auto;
 }
 
 .edit-btn .icon {
-  width: 24px;
-  height: 24px;
+  width: 16px;
+  height: 16px;
   transition: all 0.3s ease-in-out;
 }
 
@@ -432,6 +852,11 @@ const formatEstimateTime = (timeStr) => {
 .pl__ring--c {
   animation-name: ringC;
   stroke: #255ff4;
+}
+
+.pl__ring--d {
+  animation-name: ringD;
+  stroke: #2cf425;
 }
 
 @keyframes ringA {
@@ -573,4 +998,52 @@ const formatEstimateTime = (timeStr) => {
     stroke-dashoffset: -440;
   }
 }
+
+@keyframes ringD {
+  from,
+  8% {
+    stroke-dasharray: 0 440;
+    stroke-width: 20;
+    stroke-dashoffset: 0;
+  }
+
+  16% {
+    stroke-dasharray: 40 400;
+    stroke-width: 30;
+    stroke-dashoffset: -5;
+  }
+
+  36% {
+    stroke-dasharray: 40 400;
+    stroke-width: 30;
+    stroke-dashoffset: -175;
+  }
+
+  44%,
+  50% {
+    stroke-dasharray: 0 440;
+    stroke-width: 20;
+    stroke-dashoffset: -220;
+  }
+
+  58% {
+    stroke-dasharray: 40 400;
+    stroke-width: 30;
+    stroke-dashoffset: -225;
+  }
+
+  78% {
+    stroke-dasharray: 40 400;
+    stroke-width: 30;
+    stroke-dashoffset: -395;
+  }
+
+  86%,
+  to {
+    stroke-dasharray: 0 440;
+    stroke-width: 20;
+    stroke-dashoffset: -440;
+  }
+}
+
 </style>

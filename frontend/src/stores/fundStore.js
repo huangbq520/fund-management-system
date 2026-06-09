@@ -140,6 +140,15 @@ export const useFundStore = defineStore('fund', () => {
     return response
   }
 
+  async function deleteBatch(fundCodes) {
+    const response = await fundApi.deleteBatch(fundCodes)
+    if (response.code === 200) {
+      await fetchHoldings()
+      await fetchSummary()
+    }
+    return response
+  }
+
   return { holdings, summary, searchResults, loading, fetchHoldings, fetchSummary, searchFunds, addFund,
-           silentFetchHoldings, silentFetchSummary, updateHoldingInPlace, recalcSummary }
+           silentFetchHoldings, silentFetchSummary, updateHoldingInPlace, recalcSummary, deleteBatch }
 })

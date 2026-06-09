@@ -686,7 +686,7 @@ onUnmounted(() => {
 .pl__ring--a { stroke: #f42f25; }
 .pl__ring--b { animation-name: ringB; stroke: #ffdd00; }
 .pl__ring--c { animation-name: ringC; stroke: #255ff4; }
-.pl__ring--d { animation-name: ringD; stroke: #255ff4; }
+.pl__ring--d { animation-name: ringD; stroke: #2cf425; }
 
 @keyframes ringA {
   from, 4% { stroke-dasharray: 0 660; stroke-width: 20; stroke-dashoffset: -330; }
@@ -719,13 +719,49 @@ onUnmounted(() => {
 }
 
 @keyframes ringD {
-  from { stroke-dasharray: 0 440; stroke-width: 20; stroke-dashoffset: 0; }
-  8% { stroke-dasharray: 40 400; stroke-width: 30; stroke-dashoffset: -5; }
-  28% { stroke-dasharray: 40 400; stroke-width: 30; stroke-dashoffset: -175; }
-  36%, 58% { stroke-dasharray: 0 440; stroke-width: 20; stroke-dashoffset: -220; }
-  66% { stroke-dasharray: 40 400; stroke-width: 30; stroke-dashoffset: -225; }
-  86% { stroke-dasharray: 40 400; stroke-width: 30; stroke-dashoffset: -395; }
-  94%, to { stroke-dasharray: 0 440; stroke-width: 20; stroke-dashoffset: -440; }
+  from, 8% {
+    stroke-dasharray: 0 440;
+    stroke-width: 20;
+    stroke-dashoffset: 0;
+  }
+
+  16% {
+    stroke-dasharray: 40 400;
+    stroke-width: 30;
+    stroke-dashoffset: -5;
+  }
+
+  36% {
+    stroke-dasharray: 40 400;
+    stroke-width: 30;
+    stroke-dashoffset: -175;
+  }
+
+  44%,
+  50% {
+    stroke-dasharray: 0 440;
+    stroke-width: 20;
+    stroke-dashoffset: -220;
+  }
+
+  58% {
+    stroke-dasharray: 40 400;
+    stroke-width: 30;
+    stroke-dashoffset: -225;
+  }
+
+  78% {
+    stroke-dasharray: 40 400;
+    stroke-width: 30;
+    stroke-dashoffset: -395;
+  }
+
+  86%,
+  to {
+    stroke-dasharray: 0 440;
+    stroke-width: 20;
+    stroke-dashoffset: -440;
+  }
 }
 
 @media (max-width: 768px) {

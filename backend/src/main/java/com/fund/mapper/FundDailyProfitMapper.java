@@ -50,4 +50,13 @@ public interface FundDailyProfitMapper {
     BigDecimal getProfitByDate(@Param("userId") Long userId,
                                 @Param("fundCode") String fundCode,
                                 @Param("recordDate") String recordDate);
+
+    @Select("SELECT * FROM fund_daily_profit " +
+            "WHERE user_id = #{userId} AND fund_code = #{fundCode} " +
+            "ORDER BY record_date DESC LIMIT 1")
+    FundDailyProfit getLatestProfit(@Param("userId") Long userId,
+                                     @Param("fundCode") String fundCode);
+
+    @Delete("DELETE FROM fund_daily_profit")
+    void deleteAll();
 }

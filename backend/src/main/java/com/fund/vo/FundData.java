@@ -36,6 +36,16 @@ public class FundData {
     private boolean priced;
     private Double estPricedCoverage;
 
+    // 周期涨跌幅数据
+    private Double oneWeekChange;
+    private Double oneMonthChange;
+    private Double threeMonthChange;
+    private Double sixMonthChange;
+    private Double oneYearChange;
+
+    // 最新净值对应的日期
+    private String latestNetValueDate;
+
     public String getJzrq() {
         return "";
     }
@@ -43,4 +53,18 @@ public class FundData {
     public boolean isUseEstimatedValue() {
         return tradingDay && !priced;
     }
+
+    public Double getOneWeekChange() { return oneWeekChange; }
+    public void setOneWeekChange(Double oneWeekChange) { this.oneWeekChange = oneWeekChange; }
+    public Double getOneMonthChange() { return oneMonthChange; }
+    public void setOneMonthChange(Double oneMonthChange) { this.oneMonthChange = oneMonthChange; }
+    public Double getThreeMonthChange() { return threeMonthChange; }
+    public void setThreeMonthChange(Double threeMonthChange) { this.threeMonthChange = threeMonthChange; }
+    public Double getSixMonthChange() { return sixMonthChange; }
+    public void setSixMonthChange(Double sixMonthChange) { this.sixMonthChange = sixMonthChange; }
+    public Double getOneYearChange() { return oneYearChange; }
+    public void setOneYearChange(Double oneYearChange) { this.oneYearChange = oneYearChange; }
+
+    public String getLatestNetValueDate() { return latestNetValueDate; }
+    public void setLatestNetValueDate(String latestNetValueDate) { this.latestNetValueDate = latestNetValueDate; }
 }
