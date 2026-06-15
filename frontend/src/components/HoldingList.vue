@@ -65,6 +65,7 @@
             <th class="col-yesterday">昨日收益</th>
             <th class="col-profit">当日收益</th>
             <th class="col-rate">持仓收益率</th>
+            <th class="col-days">持仓天数</th>
             <th class="col-week">近一周</th>
             <th class="col-month">近一月</th>
             <th class="col-three-month">近三月</th>
@@ -108,31 +109,45 @@
                 <span class="latest-date">{{ holding.latestNetValueDate || formatLatestDate(holding) }}</span>
               </div>
             </td>
-            <td class="col-amount">{{ shouldShowPlaceholder(holding) ? '--' : formatNumber(holding.currentValue != null ? holding.currentValue : holding.holdAmount) }}</td>
+            <td class="col-amount">
+              <template v-if="fundStore.hideAmount">******</template>
+              <template v-else>
+                {{ shouldShowPlaceholder(holding) ? '--' : formatNumber(holding.currentValue != null ? holding.currentValue : holding.holdAmount) }}
+              </template>
+            </td>
             <td class="col-estimate">
               <span :class="getProfitClass(holding.estimatedChange)">
                 {{ formatPercent(holding.estimatedChange) }}
               </span>
               <span class="estimate-time">{{ formatEstimateTime(holding.valuationTime) }}</span>
             </td>
-            <td class="col-yesterday" :class="getProfitClass(holding.yesterdayProfit)">
+            <td class="col-yesterday" :class="fundStore.hideAmount ? '' : getProfitClass(holding.yesterdayProfit)">
               <div class="yesterday-container">
                 <span class="yesterday-profit">
-                  {{ shouldShowPlaceholder(holding) ? '--' : (holding.yesterdayProfit != null ? formatProfit(holding.yesterdayProfit) : '--') }}
+                  <template v-if="fundStore.hideAmount">******</template>
+                  <template v-else>
+                    {{ shouldShowPlaceholder(holding) ? '--' : (holding.yesterdayProfit != null ? formatProfit(holding.yesterdayProfit) : '--') }}
+                  </template>
                 </span>
-                <span 
-                  v-if="!shouldShowPlaceholder(holding) && holding.yesterdayChange != null" 
+                <span
+                  v-if="!fundStore.hideAmount && !shouldShowPlaceholder(holding) && holding.yesterdayChange != null"
                   :class="['yesterday-rate', getProfitClass(holding.yesterdayChange)]"
                 >
                   {{ formatPercent(holding.yesterdayChange) }}
                 </span>
               </div>
             </td>
-            <td class="col-profit" :class="getProfitClass(holding.todayProfit)">
-              {{ shouldShowPlaceholder(holding) ? '--' : formatProfit(holding.todayProfit) }}
+            <td class="col-profit" :class="fundStore.hideAmount ? '' : getProfitClass(holding.todayProfit)">
+              <template v-if="fundStore.hideAmount">******</template>
+              <template v-else>
+                {{ shouldShowPlaceholder(holding) ? '--' : formatProfit(holding.todayProfit) }}
+              </template>
             </td>
             <td class="col-rate" :class="getProfitClass(holding.profitRate)">
               {{ shouldShowPlaceholder(holding) ? '--' : formatPercent(holding.profitRate) }}
+            </td>
+            <td class="col-days">
+              {{ holding.buyDate ? calcDays(holding.buyDate) + ' 天' : '--' }}
             </td>
             <td class="col-week" :class="getProfitClass(holding.oneWeekChange)">
               {{ holding.oneWeekChange != null ? formatPercent(holding.oneWeekChange) : '--' }}
@@ -243,6 +258,13 @@ const formatEstimateTime = (timeStr) => {
     }
   }
   return str
+}
+
+const calcDays = (dateStr) => {
+  if (!dateStr) return 0
+  const buy = new Date(dateStr)
+  const now = new Date()
+  return Math.floor((now - buy) / (1000 * 60 * 60 * 24))
 }
 
 const shouldShowPlaceholder = (holding) => {
@@ -570,8 +592,15 @@ const handleBatchDelete = async () => {
 .holding-table th.col-action {
   position: sticky;
   right: 0;
-  z-index: 20;
+  z-index: 21;
   background-color: #f8fafc;
+}
+
+.holding-table td.col-action {
+  position: sticky;
+  right: 0;
+  z-index: 11;
+  background-color: white;
 }
 
 .holding-table th.col-name {
@@ -661,6 +690,11 @@ const handleBatchDelete = async () => {
 .col-cost-price,
 .col-cost-amount {
   width: 110px;
+  font-size: 14px;
+}
+
+.col-days {
+  width: 90px;
   font-size: 14px;
 }
 

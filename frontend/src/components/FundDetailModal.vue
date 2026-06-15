@@ -1,159 +1,161 @@
 <template>
-  <div class="modal-overlay" @click.self="handleClose">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2>基金详情 <span class="fund-code">{{ fundCode }}</span></h2>
-        <button @click="handleClose" class="close-btn">×</button>
-      </div>
-
-      <div class="modal-body">
-        <div v-if="loading" class="loading">
-          <svg viewBox="0 0 240 240" height="240" width="240" class="pl">
-            <circle stroke-linecap="round" stroke-dashoffset="-330" stroke-dasharray="0 660" stroke-width="20" stroke="#000" fill="none" r="105" cy="120" cx="120" class="pl__ring pl__ring--a"></circle>
-            <circle stroke-linecap="round" stroke-dashoffset="-110" stroke-dasharray="0 220" stroke-width="20" stroke="#000" fill="none" r="35" cy="120" cx="120" class="pl__ring pl__ring--b"></circle>
-            <circle stroke-linecap="round" stroke-dasharray="0 440" stroke-width="20" stroke="#000" fill="none" r="70" cy="120" cx="85" class="pl__ring pl__ring--c"></circle>
-            <circle stroke-linecap="round" stroke-dasharray="0 440" stroke-width="20" stroke="#000" fill="none" r="70" cy="120" cx="155" class="pl__ring pl__ring--d"></circle>
-          </svg>
+  <Teleport to="body">
+    <div class="modal-overlay" @click.self="handleClose">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>基金详情 <span class="fund-code">{{ fundCode }}</span></h2>
+          <button @click="handleClose" class="close-btn">×</button>
         </div>
 
-        <div v-else-if="error" class="error">
-          <span class="error-icon">!</span>
-          {{ error }}
-        </div>
-
-        <template v-else-if="detail">
-          <div class="info-card">
-            <div class="card-accent"></div>
-            <span class="val-time">{{ detail.gztime || '' }}</span>
-            <h3>基本信息</h3>
-            <div class="info-grid">
-              <div class="info-item">
-                <span class="label">基金名称</span>
-                <span class="value fund-name">{{ detail.fundName || '-' }}</span>
-              </div>
-              <div class="info-item">
-                <span class="label">基金代码</span>
-                <span class="value code">{{ detail.fundCode || '-' }}</span>
-              </div>
-              <div class="info-item">
-                <span class="label">单位净值</span>
-                <span class="value">{{ detail.dwjz || '-' }}</span>
-              </div>
-              <div class="info-item">
-                <span class="label">估算净值</span>
-                <span class="value">{{ detail.gsz || '-' }}</span>
-              </div>
-              <div class="info-item">
-                <span class="label">估算涨跌幅</span>
-                <span class="value" :class="getChangeClassLocal(detail.gszzl)">
-                  {{ formatPercentLocal(detail.gszzl) }}
-                </span>
-              </div>
-              <div class="info-item">
-                <span class="label">净值日期</span>
-                <span class="value">{{ detail.jzrq || '-' }}</span>
-              </div>
-            </div>
-            <div class="holding-divider"></div>
-            <div class="info-grid">
-              <div class="info-item">
-                <span class="label">持仓金额</span>
-                <span class="value">{{ holdingInfo.holdAmount || '--' }}</span>
-              </div>
-              <div class="info-item">
-                <span class="label">当日收益</span>
-                <span class="value" :class="profitClass(holdingInfo.todayProfit)">{{ holdingInfo.todayProfit || '--' }}</span>
-              </div>
-              <div class="info-item">
-                <span class="label">持有收益</span>
-                <span class="value" :class="profitClass(holdingInfo.profitRate)">{{ holdingInfo.profitRate || '--' }}</span>
-              </div>
-            </div>
+        <div class="modal-body">
+          <div v-if="loading" class="loading">
+            <svg viewBox="0 0 240 240" height="240" width="240" class="pl">
+              <circle stroke-linecap="round" stroke-dashoffset="-330" stroke-dasharray="0 660" stroke-width="20" stroke="#000" fill="none" r="105" cy="120" cx="120" class="pl__ring pl__ring--a"></circle>
+              <circle stroke-linecap="round" stroke-dashoffset="-110" stroke-dasharray="0 220" stroke-width="20" stroke="#000" fill="none" r="35" cy="120" cx="120" class="pl__ring pl__ring--b"></circle>
+              <circle stroke-linecap="round" stroke-dasharray="0 440" stroke-width="20" stroke="#000" fill="none" r="70" cy="120" cx="85" class="pl__ring pl__ring--c"></circle>
+              <circle stroke-linecap="round" stroke-dasharray="0 440" stroke-width="20" stroke="#000" fill="none" r="70" cy="120" cx="155" class="pl__ring pl__ring--d"></circle>
+            </svg>
           </div>
 
-          <div class="chart-card">
-            <div class="card-accent"></div>
-            <div class="chart-tabs">
-              <button
-                :class="['chart-tab', { active: chartTab === 'trend' }]"
-                @click="chartTab = 'trend'"
-              >业绩走势</button>
-              <button
-                :class="['chart-tab', { active: chartTab === 'holdings' }]"
-                @click="chartTab = 'holdings'"
-              >持仓股票</button>
-              <button
-                :class="['chart-tab', { active: chartTab === 'myprofit' }]"
-                @click="chartTab = 'myprofit'"
-              >我的收益</button>
-            </div>
-            <FundTrendChart v-if="chartTab === 'trend'" :fundCode="fundCode" @load-more="openHistoryPopup" />
-            <div v-if="chartTab === 'holdings'">
-              <table v-if="detail.holdings && detail.holdings.length > 0" class="holdings-table">
-                <thead>
-                  <tr>
-                    <th class="col-index">序号</th>
-                    <th class="col-code">股票代码</th>
-                    <th class="col-name">股票名称</th>
-                    <th class="col-change">涨跌幅</th>
-                    <th class="col-weight">占比</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(holding, index) in detail.holdings" :key="index" class="holding-row">
-                    <td class="col-index">{{ index + 1 }}</td>
-                    <td class="col-code">{{ holding.stockCode }}</td>
-                    <td class="col-name">{{ holding.stockName }}</td>
-                    <td class="col-change" :class="getChangeClassLocal(holding.change)">
-                      {{ formatChange(holding.change) }}
-                    </td>
-                    <td class="col-weight">
-                      <span class="weight-badge">{{ holding.weight }}</span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-              <div v-else class="no-data">
-                <span class="no-data-icon">📭</span>
-                <span>暂无持仓数据</span>
-              </div>
-            </div>
-            <MyProfitTab v-if="chartTab === 'myprofit'" :fundCode="fundCode" />
+          <div v-else-if="error" class="error">
+            <span class="error-icon">!</span>
+            {{ error }}
           </div>
 
-        </template>
-      </div>
-    </div>
+          <template v-else-if="detail">
+            <div class="info-card">
+              <div class="card-accent"></div>
+              <span class="val-time">{{ detail.gztime || '' }}</span>
+              <h3>基本信息</h3>
+              <div class="info-grid">
+                <div class="info-item">
+                  <span class="label">基金名称</span>
+                  <span class="value fund-name">{{ detail.fundName || '-' }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="label">基金代码</span>
+                  <span class="value code">{{ detail.fundCode || '-' }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="label">单位净值</span>
+                  <span class="value">{{ detail.dwjz || '-' }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="label">估算净值</span>
+                  <span class="value">{{ detail.gsz || '-' }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="label">估算涨跌幅</span>
+                  <span class="value" :class="getChangeClassLocal(detail.gszzl)">
+                    {{ formatPercentLocal(detail.gszzl) }}
+                  </span>
+                </div>
+                <div class="info-item">
+                  <span class="label">净值日期</span>
+                  <span class="value">{{ detail.jzrq || '-' }}</span>
+                </div>
+              </div>
+              <div class="holding-divider"></div>
+              <div class="info-grid">
+                <div class="info-item">
+                  <span class="label">持仓金额</span>
+                  <span class="value">{{ holdingInfo.holdAmount || '--' }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="label">当日收益</span>
+                  <span class="value" :class="profitClass(holdingInfo.todayProfit)">{{ holdingInfo.todayProfit || '--' }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="label">持有收益</span>
+                  <span class="value" :class="profitClass(holdingInfo.profitRate)">{{ holdingInfo.profitRate || '--' }}</span>
+                </div>
+              </div>
+            </div>
 
-    <div v-if="showHistoryPopup" class="history-backdrop" @click.self="closeHistoryPopup">
-      <div class="history-panel">
-        <div class="history-header">
-          <h3>净值历史</h3>
-          <button @click="closeHistoryPopup" class="close-btn">×</button>
+            <div class="chart-card">
+              <div class="card-accent"></div>
+              <div class="chart-tabs">
+                <button
+                  :class="['chart-tab', { active: chartTab === 'trend' }]"
+                  @click="chartTab = 'trend'"
+                >业绩走势</button>
+                <button
+                  :class="['chart-tab', { active: chartTab === 'holdings' }]"
+                  @click="chartTab = 'holdings'"
+                >持仓股票</button>
+                <button
+                  :class="['chart-tab', { active: chartTab === 'myprofit' }]"
+                  @click="chartTab = 'myprofit'"
+                >我的收益</button>
+              </div>
+              <FundTrendChart v-if="chartTab === 'trend'" :fundCode="fundCode" @load-more="openHistoryPopup" />
+              <div v-if="chartTab === 'holdings'">
+                <table v-if="detail.holdings && detail.holdings.length > 0" class="holdings-table">
+                  <thead>
+                    <tr>
+                      <th class="col-index">序号</th>
+                      <th class="col-code">股票代码</th>
+                      <th class="col-name">股票名称</th>
+                      <th class="col-change">涨跌幅</th>
+                      <th class="col-weight">占比</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(holding, index) in detail.holdings" :key="index" class="holding-row">
+                      <td class="col-index">{{ index + 1 }}</td>
+                      <td class="col-code">{{ holding.stockCode }}</td>
+                      <td class="col-name">{{ holding.stockName }}</td>
+                      <td class="col-change" :class="getChangeClassLocal(holding.change)">
+                        {{ formatChange(holding.change) }}
+                      </td>
+                      <td class="col-weight">
+                        <span class="weight-badge">{{ holding.weight }}</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div v-else class="no-data">
+                  <span class="no-data-icon">📭</span>
+                  <span>暂无持仓数据</span>
+                </div>
+              </div>
+              <MyProfitTab v-if="chartTab === 'myprofit'" :fundCode="fundCode" />
+            </div>
+
+          </template>
         </div>
-        <div class="history-body">
-          <table class="history-table">
-            <thead>
-              <tr>
-                <th>日期</th>
-                <th>净值</th>
-                <th>日涨幅</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(item, i) in historyData" :key="i">
-                <td class="col-date">{{ formatHistoryDate(item.date) }}</td>
-                <td class="col-value">{{ item.netValue != null ? item.netValue.toFixed(4) : '--' }}</td>
-                <td :class="['col-change', getHistoryChangeClass(item, i)]">
-                  {{ formatHistoryChange(item, i) }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+      </div>
+
+      <div v-if="showHistoryPopup" class="history-backdrop" @click.self="closeHistoryPopup">
+        <div class="history-panel">
+          <div class="history-header">
+            <h3>净值历史</h3>
+            <button @click="closeHistoryPopup" class="close-btn">×</button>
+          </div>
+          <div class="history-body">
+            <table class="history-table">
+              <thead>
+                <tr>
+                  <th>日期</th>
+                  <th>净值</th>
+                  <th>日涨幅</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(item, i) in historyData" :key="i">
+                  <td class="col-date">{{ formatHistoryDate(item.date) }}</td>
+                  <td class="col-value">{{ item.netValue != null ? item.netValue.toFixed(4) : '--' }}</td>
+                  <td :class="['col-change', getHistoryChangeClass(item, i)]">
+                    {{ formatHistoryChange(item, i) }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <script setup>
@@ -295,6 +297,7 @@ onMounted(() => {
   z-index: 9999;
   padding-top: 80px;
   overflow-y: auto;
+  transform: translateZ(0); /* 修复 Chrome sticky+backdrop-filter 层叠穿透 */
 }
 
 .modal-content {

@@ -80,7 +80,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick, reactive } from 'vue'
 import { fundApi } from '../api'
 
-const echartsLib = window.echarts
+const echartsLib = () => window.echarts || window.ECharts
 
 const props = defineProps({
   fundCode: { type: String, required: true }
@@ -320,7 +320,8 @@ const buildTooltipParams = (data, idx, szzsData, tysmData) => {
 }
 
 const renderChart = () => {
-  if (!chartRef.value || !echartsLib) return
+  const lib = echartsLib()
+  if (!chartRef.value || !lib) return
 
   const data = currentData.value
   if (!data?.netWorthTrend?.length) {
@@ -333,7 +334,7 @@ const renderChart = () => {
     chartInstance.value = null
   }
 
-  chartInstance.value = echartsLib.init(chartRef.value)
+  chartInstance.value = lib.init(chartRef.value)
 
   const baseValue = data.netWorthTrend.find(item => item.netValue != null)?.netValue || 1
   const dates = data.netWorthTrend.map(item => formatDate(item.date))
@@ -402,7 +403,7 @@ const renderChart = () => {
       symbol: 'none',
       lineStyle: { width: 2.5, color: trendColor },
       areaStyle: {
-        color: new echartsLib.graphic.LinearGradient(0, 0, 0, 1, [
+        color: new lib.graphic.LinearGradient(0, 0, 0, 1, [
           { offset: 0, color: `${trendColor}40` },
           { offset: 1, color: `${trendColor}05` }
         ])

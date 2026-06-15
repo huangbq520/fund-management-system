@@ -92,7 +92,7 @@
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { fundApi } from '../api'
 
-const echartsLib = window.echarts
+const echartsLib = () => window.echarts || window.ECharts
 
 const props = defineProps({
   fundCode: { type: String, required: true }
@@ -187,10 +187,12 @@ const formatMoney = (val) => {
 }
 
 const renderChart = () => {
+  const lib = echartsLib()
   console.log('===== renderChart 开始 =====')
+  console.log('echartsLib():', lib)
   
-  if (!echartsLib) {
-    console.log('没有 echartsLib！')
+  if (!lib) {
+    console.log('没有 echartsLib！window.echarts =', window.echarts)
     return
   }
   
@@ -221,7 +223,7 @@ const renderChart = () => {
       chartInstance = null
     }
     
-    chartInstance = echartsLib.init(chartRef.value)
+    chartInstance = lib.init(chartRef.value)
     
     const curve = data.value.profitCurve
     const dates = curve.map(p => formatShortDate(p.recordDate))

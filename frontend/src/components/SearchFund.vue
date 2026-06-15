@@ -63,7 +63,7 @@
       <button @click="clearSelection" class="clear-btn">清除</button>
     </div>
 
-    <OcrModal :visible="showOcrModal" @close="showOcrModal = false" @select-fund="handleOcrSelect" />
+    <OcrModal :visible="showOcrModal" @close="showOcrModal = false" @select-fund="handleOcrSelect" @batch-added="handleBatchAdded" />
   </div>
 </template>
 
@@ -227,6 +227,20 @@ const handleOcrSelect = (text) => {
   selectedFund.value = null
   showOcrModal.value = false
   performSearch()
+}
+
+const handleBatchAdded = (result) => {
+  if (!result) return
+  if (result.successCount > 0) {
+    const msg = `成功添加 ${result.successCount} 只基金` +
+      (result.skippedCount > 0 ? `（${result.skippedCount} 只已存在）` : '') +
+      (result.failedCount > 0 ? `，${result.failedCount} 只失败` : '')
+    toast.success(msg)
+  } else if (result.skippedCount > 0) {
+    toast.info(`${result.skippedCount} 只基金已在持仓中`)
+  } else if (result.failedCount > 0) {
+    toast.error(`批量添加失败`)
+  }
 }
 
 const handleClickOutside = (event) => {

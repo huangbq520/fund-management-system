@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.*;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -368,6 +369,86 @@ public class FundController {
             logger.error("删除基金失败: fundCode={}, error={}", fundCode, e.getMessage());
             return ApiResponse.error("删除基金失败");
         }
+    }
+
+    @PostMapping("/add/batch")
+    public ApiResponse<Map<String, Object>> addFundsBatch(
+            @RequestBody Map<String, Object> request,
+            HttpServletRequest httpRequest) {
+        Long userId = getUserId(httpRequest);
+        @SuppressWarnings("unchecked")
+        List<Map<String, String>> items = (List<Map<String, String>>) request.get("funds");
+        logger.info("API: 批量添加基金, count={}, userId={}", items == null ? 0 : items.size(), userId);
+
+        Map<String, Object> result = new HashMap<>();
+        List<Map<String, Object>> success = new ArrayList<>();
+        List<Map<String, Object>> failed = new ArrayList<>();
+        List<Map<String, Object>> skipped = new ArrayList<>();
+
+        if (items == null || items.isEmpty()) {
+            return ApiResponse.error("基金列表不能为空");
+        }
+
+        for (Map<String, String> item : items) {
+            String fundCode = item.get("fundCode");
+            String fundName = item.get("fundName");
+            if (fundCode == null || fundCode.trim().isEmpty()) {
+                failed.add(errorItem(fundCode, fundName, "基金代码为空"));
+                continue;
+            }
+            try {
+                Fund existingFund = fundMapper.selectByCode(fundCode, userId);
+                if (existingFund != null) {
+                    skipped.add(okItem(fundCode, fundName, "已存在"));
+                    continue;
+                }
+
+                Fund fund = new Fund();
+                fund.setUserId(userId);
+                fund.setFundCode(fundCode);
+                fund.setFundName(fundName);
+                fundMapper.insert(fund);
+
+                UserFund userFund = new UserFund();
+                userFund.setUserId(userId);
+                userFund.setFundCode(fundCode);
+                userFund.setFundName(fundName);
+                userFund.setHoldShare(BigDecimal.ZERO);
+                userFund.setHoldAmount(BigDecimal.ZERO);
+                userFund.setCostPrice(BigDecimal.ZERO);
+                userFundMapper.insert(userFund);
+
+                success.add(okItem(fundCode, fundName, "添加成功"));
+            } catch (Exception e) {
+                logger.error("批量添加基金失败: fundCode={}, error={}", fundCode, e.getMessage());
+                failed.add(errorItem(fundCode, fundName, e.getMessage()));
+            }
+        }
+
+        result.put("success", success);
+        result.put("skipped", skipped);
+        result.put("failed", failed);
+        result.put("totalCount", items.size());
+        result.put("successCount", success.size());
+        result.put("skippedCount", skipped.size());
+        result.put("failedCount", failed.size());
+        return ApiResponse.success(result);
+    }
+
+    private Map<String, Object> okItem(String code, String name, String status) {
+        Map<String, Object> m = new HashMap<>();
+        m.put("fundCode", code);
+        m.put("fundName", name);
+        m.put("status", status);
+        return m;
+    }
+
+    private Map<String, Object> errorItem(String code, String name, String message) {
+        Map<String, Object> m = new HashMap<>();
+        m.put("fundCode", code);
+        m.put("fundName", name);
+        m.put("message", message);
+        return m;
     }
 
     @PostMapping("/delete/batch")

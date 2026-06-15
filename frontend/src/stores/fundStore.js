@@ -4,6 +4,7 @@ import { fundApi } from '../api'
 
 export const useFundStore = defineStore('fund', () => {
   const holdings = ref([])
+  const hideAmount = ref(false)
   const summary = ref({
     totalAsset: 0,
     todayProfit: 0,
@@ -62,6 +63,15 @@ export const useFundStore = defineStore('fund', () => {
       return { code: 500, message: '搜索失败' }
     } finally {
       loading.search = false
+    }
+  }
+
+  async function searchFund(keyword) {
+    try {
+      return await fundApi.searchFunds(keyword)
+    } catch (err) {
+      console.error('Search failed:', err)
+      return { code: 500, message: '搜索失败' }
     }
   }
 
@@ -140,6 +150,15 @@ export const useFundStore = defineStore('fund', () => {
     return response
   }
 
+  async function addFundBatch(funds) {
+    const response = await fundApi.addBatch(funds)
+    if (response.code === 200) {
+      await fetchHoldings()
+      await fetchSummary()
+    }
+    return response
+  }
+
   async function deleteBatch(fundCodes) {
     const response = await fundApi.deleteBatch(fundCodes)
     if (response.code === 200) {
@@ -149,6 +168,6 @@ export const useFundStore = defineStore('fund', () => {
     return response
   }
 
-  return { holdings, summary, searchResults, loading, fetchHoldings, fetchSummary, searchFunds, addFund,
+  return { holdings, summary, searchResults, loading, hideAmount, fetchHoldings, fetchSummary, searchFunds, searchFund, addFund, addFundBatch,
            silentFetchHoldings, silentFetchSummary, updateHoldingInPlace, recalcSummary, deleteBatch }
 })

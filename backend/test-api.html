@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #1677ff;
+            padding-bottom: 10px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8fafc;
+            border-radius: 8px;
+        }
+        button {
+            background: #1677ff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #4096ff;
+        }
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            background: #fff;
+            border: 1px solid #e8e8e8;
+            border-radius: 5px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .success {
+            color: #52c41a;
+        }
+        .error {
+            color: #ff4d4f;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 API测试</h1>
+        
+        <div class="test-section">
+            <h3>1. 测试获取大盘指数列表</h3>
+            <button onclick="testIndices()">获取大盘指数</button>
+            <div id="indices-result" class="result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>2. 测试获取K线数据</h3>
+            <select id="index-select">
+                <option value="sh000001">上证指数</option>
+                <option value="sz399006">创业板指</option>
+                <option value="sz399001">深证成指</option>
+                <option value="sh000016">上证50</option>
+                <option value="sh000300">沪深300</option>
+            </select>
+            <button onclick="testKline()">获取K线</button>
+            <div id="kline-result" class="result"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api/market';
+        
+        async function testIndices() {
+            const resultDiv = document.getElementById('indices-result');
+            resultDiv.innerHTML = '正在请求...';
+            
+            try {
+                const response = await fetch(`${API_BASE}/indices`);
+                const data = await response.json();
+                resultDiv.innerHTML = `<span class="success">✅ 请求成功！</span>\n\n${JSON.stringify(data, null, 2)}`;
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">❌ 请求失败：</span>\n${error.message}`;
+            }
+        }
+        
+        async function testKline() {
+            const resultDiv = document.getElementById('kline-result');
+            const code = document.getElementById('index-select').value;
+            const endDate = new Date().toISOString().slice(0,10).replace(/-/g,'');
+            const startDate = new Date(Date.now() - 180*24*60*60*1000).toISOString().slice(0,10).replace(/-/g,'');
+            
+            resultDiv.innerHTML = `正在请求 ${code} 的K线数据 (${startDate} - ${endDate})...`;
+            
+            try {
+                const response = await fetch(`${API_BASE}/kline?code=${code}&startDate=${startDate}&endDate=${endDate}&klt=101`);
+                const data = await response.json();
+                resultDiv.innerHTML = `<span class="success">✅ 请求成功！</span>\n\n${JSON.stringify(data, null, 2)}`;
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">❌ 请求失败：</span>\n${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html>

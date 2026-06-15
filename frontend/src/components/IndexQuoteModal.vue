@@ -1,6 +1,7 @@
 <template>
-  <div v-if="visible" class="quote-overlay" @click.self="emit('close')">
-    <div class="quote-panel">
+  <Teleport to="body">
+    <div v-if="visible" class="quote-overlay" @click.self="emit('close')">
+      <div class="quote-panel">
       <div class="quote-header">
         <div class="header-left">
           <h2>{{ indexName }}</h2>
@@ -9,7 +10,7 @@
         <button class="close-btn" @click="emit('close')">&times;</button>
       </div>
 
-      <div v-if="loading" class="quote-loading">
+      <div v-if="loading && klineData.length === 0" class="quote-loading">
         <svg viewBox="0 0 240 240" height="240" width="240" class="pl">
           <circle stroke-linecap="round" stroke-dashoffset="-330" stroke-dasharray="0 660" stroke-width="20" stroke="#000" fill="none" r="105" cy="120" cx="120" class="pl__ring pl__ring--a"></circle>
           <circle stroke-linecap="round" stroke-dashoffset="-110" stroke-dasharray="0 220" stroke-width="20" stroke="#000" fill="none" r="35" cy="120" cx="120" class="pl__ring pl__ring--b"></circle>
@@ -19,7 +20,7 @@
         <span>加载中...</span>
       </div>
 
-      <div v-else-if="error" class="quote-error">
+      <div v-else-if="error && klineData.length === 0" class="quote-error">
         <span class="error-icon">!</span>
         <span>{{ error }}</span>
       </div>
@@ -72,19 +73,23 @@
         </div>
 
         <div class="chart-area">
+          <div v-if="loading && klineData.length > 0" class="chart-refreshing">
+            <span class="refresh-dot"></span> 数据更新中...
+          </div>
           <div ref="mainChartRef" class="main-chart"></div>
           <div ref="volChartRef" class="vol-chart"></div>
         </div>
       </template>
     </div>
-  </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick, reactive } from 'vue'
 import { marketApi } from '../api'
 
-const echartsLib = window.echarts
+const echartsLib = () => window.echarts || window.ECharts
 
 const props = defineProps({
   indexCode: { type: String, required: true },
@@ -103,6 +108,9 @@ const loading = ref(false)
 const error = ref('')
 const klineData = ref([])
 const currentKlt = ref('101')
+
+// 按 指数代码+周期 缓存已加载的K线数据，避免重复请求
+const dataCache = reactive(new Map())
 
 const periodGroups = [
   { label: '1分', value: '1' },
@@ -228,7 +236,21 @@ const toDateStr = (d) => {
   return `${y}${m}${day}`
 }
 
-const fetchKline = async (klt) => {
+const cacheKey = (klt) => `${props.indexCode}:${klt}`
+
+const fetchKline = async (klt, forceRefresh = false) => {
+  const key = cacheKey(klt)
+
+  // 命中缓存：直接使用缓存数据，跳过网络请求
+  if (!forceRefresh && dataCache.has(key)) {
+    klineData.value = dataCache.get(key)
+    loading.value = false
+    error.value = ''
+    await nextTick()
+    renderCharts()
+    return
+  }
+
   const { start, end } = getDateRange(klt)
   loading.value = true
   error.value = ''
@@ -236,16 +258,35 @@ const fetchKline = async (klt) => {
   try {
     const res = await marketApi.getKline(props.indexCode, start, end, klt)
     if (res.code === 200 && res.data?.klines) {
-      klineData.value = res.data.klines
-      await nextTick()
-      renderCharts()
+      // 后端 BigDecimal / Long 被 Jackson 序列化为字符串，这里统一转回数字
+      klineData.value = res.data.klines.map(d => ({
+        date: d.date,
+        open: Number(d.open),
+        close: Number(d.close),
+        high: Number(d.high),
+        low: Number(d.low),
+        volume: Number(d.volume),
+        amount: Number(d.amount),
+        amplitude: Number(d.amplitude),
+        changePercent: Number(d.changePercent),
+        change: Number(d.change)
+      }))
+      // 写入缓存
+      dataCache.set(key, klineData.value)
     } else {
       error.value = res.message || '加载失败'
     }
-  } catch {
+  } catch (e) {
+    console.error('[IndexQuoteModal] fetchKline error:', e)
     error.value = '网络错误，请重试'
   } finally {
     loading.value = false
+  }
+
+  // 必须在 loading 设为 false 之后再渲染图表，否则 chart div 因 v-if 还未挂载到 DOM
+  if (!error.value && klineData.value.length) {
+    await nextTick()
+    renderCharts()
   }
 }
 
@@ -263,15 +304,132 @@ const colors = {
   downBg: '#e8f8e8'
 }
 
+// 事件处理器引用，用于解绑避免泄漏
+let mainZoomHandler = null
+let volZoomHandler = null
+let mainMoveHandler = null
+let mainOutHandler = null
+
+const buildMainOption = (dates, ohlc, yMin, yMax, yPad) => ({
+  grid: { left: '8%', right: '2%', top: '3%', bottom: '12%' },
+  xAxis: {
+    type: 'category',
+    data: dates,
+    axisLine: { lineStyle: { color: '#e2e8f0' } },
+    axisTick: { show: false },
+    axisLabel: { color: '#94a3b8', fontSize: 10, interval: Math.max(Math.floor(dates.length / 8), 0) },
+    splitLine: { show: false }
+  },
+  yAxis: {
+    type: 'value',
+    min: yMin - yPad,
+    max: yMax + yPad,
+    scale: true,
+    splitLine: { lineStyle: { color: '#f1f5f9', type: 'dashed' } },
+    axisLabel: { color: '#94a3b8', fontSize: 10, formatter: v => v.toFixed(0) }
+  },
+  dataZoom: [
+    { type: 'inside', xAxisIndex: 0, start: 0, end: 100 },
+    { type: 'slider', xAxisIndex: 0, start: 0, end: 100, bottom: '2%', height: 18,
+      borderColor: '#e2e8f0', fillerColor: 'rgba(22,119,255,0.1)',
+      handleStyle: { color: '#1677ff' }, textStyle: { fontSize: 10, color: '#94a3b8' } }
+  ],
+  tooltip: {
+    trigger: 'axis',
+    axisPointer: { type: 'cross' },
+    backgroundColor: 'rgba(15,23,42,0.92)',
+    borderColor: 'transparent',
+    borderRadius: 8,
+    padding: [10, 14],
+    textStyle: { color: '#e2e8f0', fontSize: 12 },
+    formatter: (params) => {
+      if (!params || !params.length) return ''
+      const d = klineData.value[params[0].dataIndex]
+      if (!d) return ''
+      const changeClass = Number(d.close) >= Number(d.open) ? '#e53935' : '#009e5f'
+      const sign = Number(d.change) >= 0 ? '+' : ''
+      return `<div style="font-weight:600;margin-bottom:6px;">${d.date}</div>
+        <div>开盘: <b>${d.open}</b></div>
+        <div>收盘: <b>${d.close}</b></div>
+        <div style="color:#e53935;">最高: <b>${d.high}</b></div>
+        <div style="color:#009e5f;">最低: <b>${d.low}</b></div>
+        <div style="margin-top:4px;color:${changeClass};">涨跌幅: <b>${sign}${d.changePercent}%</b></div>
+        <div>成交量: <b>${formatVolume(d.volume)}</b></div>
+        <div>成交额: <b>${formatAmount(d.amount)}</b></div>`
+    }
+  },
+  series: [{
+    type: 'candlestick',
+    data: ohlc,
+    itemStyle: {
+      color: colors.up,
+      color0: colors.down,
+      borderColor: colors.up,
+      borderColor0: colors.down
+    },
+    barMaxWidth: 20
+  }]
+})
+
+const buildVolOption = (dates, volumes, volMax) => ({
+  grid: { left: '8%', right: '2%', top: '3%', bottom: '12%' },
+  xAxis: {
+    type: 'category',
+    data: dates,
+    axisLine: { lineStyle: { color: '#e2e8f0' } },
+    axisTick: { show: false },
+    axisLabel: { show: false },
+    splitLine: { show: false }
+  },
+  yAxis: {
+    type: 'value',
+    min: 0,
+    max: volMax * 1.8,
+    splitNumber: 3,
+    splitLine: { lineStyle: { color: '#f1f5f9', type: 'dashed' } },
+    axisLabel: { color: '#94a3b8', fontSize: 9, formatter: v => {
+      if (v >= 1e8) return (v / 1e8).toFixed(1) + '亿'
+      if (v >= 1e4) return (v / 1e4).toFixed(0) + '万'
+      return v
+    }}
+  },
+  dataZoom: [
+    { type: 'inside', xAxisIndex: 0, start: 0, end: 100 },
+    { type: 'slider', show: false, xAxisIndex: 0, start: 0, end: 100 }
+  ],
+  series: [{
+    type: 'bar',
+    data: volumes,
+    barWidth: '60%'
+  }]
+})
+
 const renderCharts = () => {
-  if (!mainChartRef.value || !volChartRef.value || !echartsLib) return
+  const lib = echartsLib()
+  if (!mainChartRef.value || !volChartRef.value || !lib) {
+    if (!lib) {
+      console.error('[IndexQuoteModal] ECharts library not loaded. window.echarts =', window.echarts)
+      error.value = '图表库未加载，请刷新页面重试'
+    }
+    return
+  }
   if (!klineData.value.length) return
 
+  const rectMain = mainChartRef.value.getBoundingClientRect()
+  if (rectMain.width === 0 || rectMain.height === 0) {
+    // DOM 尚未完成布局，等待下一帧重试
+    requestAnimationFrame(renderCharts)
+    return
+  }
+
+  // 参照 FundTrendChart：每次渲染都销毁旧实例再重新初始化，
+  // 确保图表始终绑定到当前 DOM 元素，避免切换周期后蜡烛线不渲染
   disposeCharts()
 
-  mainChart = echartsLib.init(mainChartRef.value)
-  volChart = echartsLib.init(volChartRef.value)
+  mainChart = lib.init(mainChartRef.value)
+  volChart = lib.init(volChartRef.value)
 
+  // --- 构建数据 ---
   const dates = klineData.value.map(d => d.date)
   const ohlc = klineData.value.map(d => [d.open, d.close, d.low, d.high])
   const volumes = klineData.value.map(d => {
@@ -282,113 +440,20 @@ const renderCharts = () => {
     }
   })
 
-  // 计算Y轴范围
   const allPrices = klineData.value.flatMap(d => [Number(d.high), Number(d.low)])
   const yMin = Math.min(...allPrices)
   const yMax = Math.max(...allPrices)
   const yPad = (yMax - yMin) * 0.05
-
-  const mainOption = {
-    grid: { left: '8%', right: '2%', top: '3%', bottom: '12%' },
-    xAxis: {
-      type: 'category',
-      data: dates,
-      axisLine: { lineStyle: { color: '#e2e8f0' } },
-      axisTick: { show: false },
-      axisLabel: { color: '#94a3b8', fontSize: 10, interval: Math.max(Math.floor(dates.length / 8), 0) },
-      splitLine: { show: false }
-    },
-    yAxis: {
-      type: 'value',
-      min: yMin - yPad,
-      max: yMax + yPad,
-      scale: true,
-      splitLine: { lineStyle: { color: '#f1f5f9', type: 'dashed' } },
-      axisLabel: { color: '#94a3b8', fontSize: 10, formatter: v => v.toFixed(0) }
-    },
-    dataZoom: [
-      { type: 'inside', xAxisIndex: [0, 0], start: 0, end: 100 },
-      { type: 'slider', xAxisIndex: [0, 0], start: 0, end: 100, bottom: '2%', height: 18,
-        borderColor: '#e2e8f0', fillerColor: 'rgba(22,119,255,0.1)',
-        handleStyle: { color: '#1677ff' }, textStyle: { fontSize: 10, color: '#94a3b8' } }
-    ],
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'cross' },
-      backgroundColor: 'rgba(15,23,42,0.92)',
-      borderColor: 'transparent',
-      borderRadius: 8,
-      padding: [10, 14],
-      textStyle: { color: '#e2e8f0', fontSize: 12 },
-      formatter: (params) => {
-        if (!params || !params.length) return ''
-        const d = klineData.value[params[0].dataIndex]
-        if (!d) return ''
-        const changeClass = Number(d.close) >= Number(d.open) ? '#e53935' : '#009e5f'
-        const sign = Number(d.change) >= 0 ? '+' : ''
-        return `<div style="font-weight:600;margin-bottom:6px;">${d.date}</div>
-          <div>开盘: <b>${d.open}</b></div>
-          <div>收盘: <b>${d.close}</b></div>
-          <div style="color:#e53935;">最高: <b>${d.high}</b></div>
-          <div style="color:#009e5f;">最低: <b>${d.low}</b></div>
-          <div style="margin-top:4px;color:${changeClass};">涨跌幅: <b>${sign}${d.changePercent}%</b></div>
-          <div>成交量: <b>${formatVolume(d.volume)}</b></div>
-          <div>成交额: <b>${formatAmount(d.amount)}</b></div>`
-      }
-    },
-    series: [{
-      type: 'candlestick',
-      data: ohlc,
-      itemStyle: {
-        color: colors.up,
-        color0: colors.down,
-        borderColor: colors.up,
-        borderColor0: colors.down
-      },
-      barMaxWidth: 20
-    }]
-  }
-
   const volMax = Math.max(...volumes.map(v => v.value))
 
-  const volOption = {
-    grid: { left: '8%', right: '2%', top: '3%', bottom: '12%' },
-    xAxis: {
-      type: 'category',
-      data: dates,
-      axisLine: { lineStyle: { color: '#e2e8f0' } },
-      axisTick: { show: false },
-      axisLabel: { show: false },
-      splitLine: { show: false }
-    },
-    yAxis: {
-      type: 'value',
-      min: 0,
-      max: volMax * 1.8,
-      splitNumber: 3,
-      splitLine: { lineStyle: { color: '#f1f5f9', type: 'dashed' } },
-      axisLabel: { color: '#94a3b8', fontSize: 9, formatter: v => {
-        if (v >= 1e8) return (v / 1e8).toFixed(1) + '亿'
-        if (v >= 1e4) return (v / 1e4).toFixed(0) + '万'
-        return v
-      }}
-    },
-    dataZoom: [
-      { type: 'inside', xAxisIndex: [0, 0], start: 0, end: 100 },
-      { type: 'slider', show: false, start: 0, end: 100 }
-    ],
-    series: [{
-      type: 'bar',
-      data: volumes,
-      barWidth: '60%'
-    }]
-  }
+  const mainOption = buildMainOption(dates, ohlc, yMin, yMax, yPad)
+  const volOption = buildVolOption(dates, volumes, volMax)
 
   mainChart.setOption(mainOption)
   volChart.setOption(volOption)
 
-  // 联动 dataZoom
-  mainChart.on('dataZoom', (params) => {
+  // --- 联动 dataZoom ---
+  mainZoomHandler = (params) => {
     if (volChart && !volChart.isDisposed()) {
       volChart.dispatchAction({
         type: 'dataZoom',
@@ -397,9 +462,10 @@ const renderCharts = () => {
         end: params.end != null ? params.end : mainChart.getOption().dataZoom[0].end
       })
     }
-  })
+  }
+  mainChart.on('dataZoom', mainZoomHandler)
 
-  volChart.on('dataZoom', (params) => {
+  volZoomHandler = (params) => {
     if (mainChart && !mainChart.isDisposed()) {
       mainChart.dispatchAction({
         type: 'dataZoom',
@@ -408,24 +474,38 @@ const renderCharts = () => {
         end: params.end != null ? params.end : volChart.getOption().dataZoom[0].end
       })
     }
-  })
+  }
+  volChart.on('dataZoom', volZoomHandler)
 
-  // 十字线联动
-  mainChart.on('mousemove', (params) => {
+  // --- 十字线联动 ---
+  mainMoveHandler = (params) => {
     if (volChart && !volChart.isDisposed()) {
       volChart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: params.dataIndex })
     }
-  })
-  mainChart.on('mouseout', () => {
+  }
+  mainChart.on('mousemove', mainMoveHandler)
+
+  mainOutHandler = () => {
     if (volChart && !volChart.isDisposed()) {
       volChart.dispatchAction({ type: 'hideTip' })
     }
+  }
+  mainChart.on('mouseout', mainOutHandler)
+
+  // 确保布局正确
+  requestAnimationFrame(() => {
+    if (mainChart && !mainChart.isDisposed()) mainChart.resize()
+    if (volChart && !volChart.isDisposed()) volChart.resize()
   })
 }
 
 const disposeCharts = () => {
   if (mainChart && !mainChart.isDisposed()) { mainChart.dispose(); mainChart = null }
   if (volChart && !volChart.isDisposed()) { volChart.dispose(); volChart = null }
+  mainZoomHandler = null
+  volZoomHandler = null
+  mainMoveHandler = null
+  mainOutHandler = null
 }
 
 const handleResize = () => {
@@ -433,15 +513,23 @@ const handleResize = () => {
   if (volChart && !volChart.isDisposed()) volChart.resize()
 }
 
+// 弹窗显示/隐藏：显示时拉取数据，隐藏时销毁图表实例
 watch(() => props.visible, (v) => {
   if (v && props.indexCode) {
     fetchKline(currentKlt.value)
-  } else {
+  } else if (!v) {
     disposeCharts()
   }
 })
 
-watch(() => props.indexCode, (newCode) => {
+// 切换 indexCode 时清空该指数的缓存并重置周期
+watch(() => props.indexCode, (newCode, oldCode) => {
+  if (oldCode && oldCode !== newCode) {
+    // 清空旧指数的缓存
+    for (const key of dataCache.keys()) {
+      if (key.startsWith(oldCode + ':')) dataCache.delete(key)
+    }
+  }
   if (props.visible && newCode) {
     currentKlt.value = '101'
     fetchKline('101')
@@ -450,6 +538,9 @@ watch(() => props.indexCode, (newCode) => {
 
 onMounted(() => {
   window.addEventListener('resize', handleResize)
+  if (props.visible && props.indexCode && klineData.value.length === 0 && !loading.value) {
+    fetchKline(currentKlt.value)
+  }
 })
 
 onUnmounted(() => {
@@ -470,6 +561,7 @@ onUnmounted(() => {
   z-index: 9999;
   padding-top: 60px;
   overflow-y: auto;
+  transform: translateZ(0); /* 修复 Chrome sticky+backdrop-filter 层叠穿透 */
 }
 
 .quote-panel {
@@ -664,6 +756,36 @@ onUnmounted(() => {
 /* ---- Charts ---- */
 .chart-area {
   padding: 20px 24px 24px;
+  position: relative;
+}
+
+.chart-refreshing {
+  position: absolute;
+  top: 28px;
+  right: 36px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #1677ff;
+  background: rgba(22, 119, 255, 0.06);
+  padding: 4px 12px;
+  border-radius: 6px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.refresh-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #1677ff;
+  animation: refreshPulse 1s ease-in-out infinite;
+}
+
+@keyframes refreshPulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
 }
 
 .main-chart {

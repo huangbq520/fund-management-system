@@ -1,0 +1,15 @@
+{
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Spring Boot-FundApplication<fund-management>",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "mainClass": "com.fund.FundApplication",
+      "projectName": "fund-management",
+      "args": "",
+      "vmArgs": "-Dsun.security.ssl.allowUnsafeRenegotiation=true",
+      "envFile": "${workspaceFolder}/.env"
+    }
+  ]
+}

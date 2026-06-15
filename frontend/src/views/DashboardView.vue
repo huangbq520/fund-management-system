@@ -68,6 +68,8 @@
       @close="closeQuote"
     />
   </main>
+
+  <SiteFooter />
 </template>
 
 <script setup>
@@ -80,6 +82,7 @@ import HoldingList from '../components/HoldingList.vue'
 import FundDetailModal from '../components/FundDetailModal.vue'
 import IndexQuoteModal from '../components/IndexQuoteModal.vue'
 import UserMenu from '../components/UserMenu.vue'
+import SiteFooter from '../components/SiteFooter.vue'
 import { useFundStore } from '../stores/fundStore'
 
 const router = useRouter()
@@ -118,15 +121,26 @@ const closeDetail = () => {
 
 <style scoped>
 .app-header {
-  background: #e8e8e8;
+  background: rgba(232, 232, 232, 0.85);
   backdrop-filter: blur(10px);
   padding: 12px 30px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  position: relative;
-  z-index: 10;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  isolation: isolate;
+}
+.app-header::after {
+  content: "";
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: transparent;
 }
 
 .logo-wrapper {

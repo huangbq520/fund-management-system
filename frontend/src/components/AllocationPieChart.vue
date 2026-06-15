@@ -13,7 +13,7 @@ import { storeToRefs } from 'pinia'
 
 const emit = defineEmits(['view-detail'])
 
-const echartsLib = window.echarts
+const echartsLib = () => window.echarts || window.ECharts
 
 const fundStore = useFundStore()
 const { holdings } = storeToRefs(fundStore)
@@ -29,14 +29,15 @@ const colors = [
 ]
 
 const renderChart = () => {
-  if (!chartRef.value || !echartsLib || !hasData.value) return
+  const lib = echartsLib()
+  if (!chartRef.value || !lib || !hasData.value) return
 
   if (chartInstance) {
     chartInstance.dispose()
     chartInstance = null
   }
 
-  chartInstance = echartsLib.init(chartRef.value)
+  chartInstance = lib.init(chartRef.value)
 
   const chartData = holdings.value
     .filter(h => {

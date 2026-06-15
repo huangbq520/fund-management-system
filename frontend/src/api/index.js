@@ -65,6 +65,8 @@ export const fundApi = {
 
   add: (fundCode, fundName) => api.post('/fund/add', { fundCode, fundName }),
 
+  addBatch: (funds) => api.post('/fund/add/batch', { funds }),
+
   delete: (fundCode) => api.post('/fund/delete', { fundCode }),
 
   getHoldingList: () => api.get('/fund/holding/list'),
