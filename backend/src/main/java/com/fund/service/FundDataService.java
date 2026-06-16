@@ -95,6 +95,20 @@ public class FundDataService {
                     case "dwjz":
                         fundData.setUnitNetValue(value);
                         break;
+                    case "jzrq":
+                        // 净值日期：与 dwjz 对应，格式为 "yyyy-MM-dd"（如 "2026-06-15"）
+                        if (value != null && !value.isEmpty() && !value.equals("null")) {
+                            fundData.setNetValueDate(value);  // 存完整日期，用于判断是否为今天
+                            try {
+                                java.time.LocalDate date = java.time.LocalDate.parse(value);
+                                String mmdd = String.format("%02d-%02d", date.getMonthValue(), date.getDayOfMonth());
+                                fundData.setLatestNetValueDate(mmdd);  // MM-dd 格式用于显示
+                            } catch (Exception dateEx) {
+                                // 如果格式不是标准 yyyy-MM-dd，尝试用原始值
+                                fundData.setLatestNetValueDate(value);
+                            }
+                        }
+                        break;
                     case "gsz":
                         fundData.setEstimatedNetValue(value);
                         break;
@@ -434,14 +448,27 @@ public class FundDataService {
         fundData.setHistoryTrend(trends);
 
         if (trends.size() >= 1) {
-            // 保存最新净值日期
-            FundHistoryTrend last = trends.get(trends.size() - 1);
-            try {
-                SimpleDateFormat sdf = new SimpleDateFormat("MM-dd");
-                String formattedDate = sdf.format(new Date(Long.parseLong(last.getDate())));
-                fundData.setLatestNetValueDate(formattedDate);
-            } catch (Exception e) {
-                logger.warn("解析最新净值日期失败: error={}", e.getMessage());
+            // 保存最新净值日期：优先使用基本信息中的 jzrq（与 dwjz 对应），回退到历史趋势最后一条
+            // 回退时必须同步：净值和日期必须来自同一数据源，避免净值是6-12但日期是6-15
+            if (fundData.getLatestNetValueDate() == null || fundData.getLatestNetValueDate().isEmpty()) {
+                FundHistoryTrend last = trends.get(trends.size() - 1);
+                try {
+                    SimpleDateFormat sdf = new SimpleDateFormat("MM-dd");
+                    String formattedDate = sdf.format(new Date(Long.parseLong(last.getDate())));
+                    fundData.setLatestNetValueDate(formattedDate);
+                    // 设置完整日期（yyyy-MM-dd）用于判断
+                    try {
+                        java.time.LocalDate lastDate = new java.sql.Date(Long.parseLong(last.getDate()))
+                            .toLocalDate();
+                        fundData.setNetValueDate(lastDate.toString());
+                    } catch (Exception ignored) {}
+                    // 回退时，同时使用历史趋势的净值作为 unitNetValue，确保净值和日期一致
+                    if (last.getNetValue() != null) {
+                        fundData.setUnitNetValue(String.valueOf(last.getNetValue()));
+                    }
+                } catch (Exception e) {
+                    logger.warn("解析最新净值日期失败: error={}", e.getMessage());
+                }
             }
         }
 

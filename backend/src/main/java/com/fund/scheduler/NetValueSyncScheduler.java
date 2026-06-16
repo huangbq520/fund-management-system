@@ -25,13 +25,14 @@ public class NetValueSyncScheduler {
     @Resource
     private FundDataService fundDataService;
 
-    @Scheduled(cron = "0 5 15 * * MON-FRI")
+    @Scheduled(cron = "0 */30 15-22 * * MON-FRI")
     public void syncConfirmedNetValue() {
         logger.info("=== 盘后净值同步任务启动 ===");
         long startTime = System.currentTimeMillis();
 
         List<UserFund> allFunds = userFundMapper.findAll();
         int successCount = 0;
+        int skipCount = 0;
         int failCount = 0;
 
         for (UserFund fund : allFunds) {
@@ -41,11 +42,22 @@ public class NetValueSyncScheduler {
                 String unitNetValue = fundData.getUnitNetValue();
                 String yesterdayNetValue = fundData.getYesterdayNetValue();
 
-                if (unitNetValue != null && !unitNetValue.isEmpty() && !unitNetValue.equals("null")) {
-                    fund.setConfirmedNetValue(new BigDecimal(unitNetValue));
-                    fund.setYesterdayNetValue(new BigDecimal(unitNetValue));
+                // ===== 关键校验：只有当净值日期确实是今天时，才确认今天的收益 =====
+                if (!fundData.isNetValueForToday()) {
+                    skipCount++;
+                    logger.info("跳过(净值未发布): fundCode={}, netValueDate={}",
+                        fund.getFundCode(), fundData.getNetValueDate());
+                    continue;
                 }
 
+                if (unitNetValue == null || unitNetValue.isEmpty() || unitNetValue.equals("null")) {
+                    skipCount++;
+                    continue;
+                }
+
+                fund.setConfirmedNetValue(new BigDecimal(unitNetValue));
+
+                // yesterdayNetValue 必须来自历史趋势，不能等于 confirmedNetValue（否则 profit=0）
                 if (yesterdayNetValue != null && !yesterdayNetValue.isEmpty() && !yesterdayNetValue.equals("null")) {
                     fund.setYesterdayNetValue(new BigDecimal(yesterdayNetValue));
                 }
@@ -57,32 +69,33 @@ public class NetValueSyncScheduler {
                 if (yesterdayShare.compareTo(BigDecimal.ZERO) < 0) {
                     yesterdayShare = BigDecimal.ZERO;
                 }
-                fund.setYesterdayShare(yesterdayShare);
 
                 fund.setProfitStatus(1);
                 fund.setProfitConfirmDate(new java.util.Date());
                 fund.setLastSyncTime(new Date());
 
-                // 更新持仓金额为当前市值 = 昨日份额 × 单位净值
-                BigDecimal holdAmount = yesterdayShare.multiply(
-                    fund.getConfirmedNetValue() != null ? fund.getConfirmedNetValue() : BigDecimal.ZERO
-                ).setScale(2, java.math.RoundingMode.HALF_UP);
-                fund.setHoldAmount(holdAmount);
+                // 持仓金额 = 昨日份额 × 今日单位净值
+                BigDecimal currentValue = yesterdayShare.multiply(fund.getConfirmedNetValue())
+                    .setScale(2, java.math.RoundingMode.HALF_UP);
+                fund.setHoldAmount(currentValue);
 
-                // 计算并确认当日收益 = 昨日份额 × (今日单位净值 - 昨日净值)
+                // 当日收益 = 昨日份额 × (今日单位净值 - 昨日单位净值)
                 BigDecimal todayUnitNV = fund.getConfirmedNetValue();
                 BigDecimal yesterdayNV = fund.getYesterdayNetValue();
                 if (todayUnitNV != null && yesterdayNV != null
-                    && todayUnitNV.compareTo(BigDecimal.ZERO) > 0 && yesterdayNV.compareTo(BigDecimal.ZERO) > 0) {
+                    && todayUnitNV.compareTo(BigDecimal.ZERO) > 0
+                    && yesterdayNV.compareTo(BigDecimal.ZERO) > 0) {
                     BigDecimal todayProfit = yesterdayShare.multiply(todayUnitNV.subtract(yesterdayNV))
                         .setScale(2, java.math.RoundingMode.HALF_UP);
                     fund.setConfirmedProfit(todayProfit);
+                } else {
+                    fund.setConfirmedProfit(BigDecimal.ZERO);
                 }
 
                 userFundMapper.updatePostClose(fund);
                 successCount++;
-                logger.info("净值同步成功: fundCode={}, yesterdayShare={}, yesterdayNetValue={}",
-                    fund.getFundCode(), yesterdayShare, fund.getYesterdayNetValue());
+                logger.info("净值同步成功: fundCode={}, netValueDate={}, confirmedNV={}, profit={}",
+                    fund.getFundCode(), fundData.getNetValueDate(), unitNetValue, fund.getConfirmedProfit());
             } catch (Exception e) {
                 failCount++;
                 logger.error("净值同步失败: fundCode={}, error={}", fund.getFundCode(), e.getMessage());
@@ -90,7 +103,8 @@ public class NetValueSyncScheduler {
         }
 
         long duration = System.currentTimeMillis() - startTime;
-        logger.info("=== 盘后净值同步任务完成 === 成功: {}, 失败: {}, 耗时: {}ms", successCount, failCount, duration);
+        logger.info("=== 盘后净值同步任务完成 === 成功: {}, 跳过(净值未发布): {}, 失败: {}, 耗时: {}ms",
+            successCount, skipCount, failCount, duration);
     }
 
     @Scheduled(cron = "0 0 9 * * MON-FRI")
@@ -109,6 +123,8 @@ public class NetValueSyncScheduler {
                 fund.setConfirmedNetValue(null);
                 fund.setConfirmedProfit(null);
                 userFundMapper.updateDailyFields(fund);
+                // 同时清空昨天的估算数据缓存
+                userFundMapper.clearCachedEstimate(fund.getFundCode());
                 count++;
             } catch (Exception e) {
                 logger.error("重置每日字段失败: fundCode={}, error={}", fund.getFundCode(), e.getMessage());

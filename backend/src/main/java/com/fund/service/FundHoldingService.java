@@ -7,6 +7,7 @@ import com.fund.mapper.FundDailyProfitMapper;
 import com.fund.mapper.FundMapper;
 import com.fund.mapper.UserFundMapper;
 import com.fund.vo.FundData;
+import com.fund.service.FundDataService;
 import com.fund.vo.FundHoldingVO;
 import com.fund.vo.PortfolioSummary;
 import org.slf4j.Logger;
@@ -23,6 +24,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.List;
+import java.util.Date;
 
 @Service
 public class FundHoldingService {
@@ -52,6 +54,12 @@ public class FundHoldingService {
 
     private boolean isAfterTradingClose() {
         return LocalTime.now(BEIJING_ZONE).isAfter(AFTERNOON_CLOSE);
+    }
+
+    // 估算数据写入缓存的时间窗口：今日 09:00-22:00（覆盖整个交易日及盘后）
+    private boolean isWithinCacheWindow() {
+        LocalTime now = LocalTime.now(BEIJING_ZONE);
+        return now.isAfter(LocalTime.of(9, 0)) && now.isBefore(LocalTime.of(22, 0));
     }
 
     private boolean isTodayProfitConfirmed(UserFund userFund) {
@@ -236,33 +244,50 @@ public class FundHoldingService {
         boolean alreadyConfirmed = isTodayProfitConfirmed(userFund);
 
         if (alreadyConfirmed) {
-            vo.setTodayProfitConfirmed(userFund.getConfirmedProfit() != null ?
-                    userFund.getConfirmedProfit().setScale(2, RoundingMode.HALF_UP) :
-                    BigDecimal.ZERO);
-            vo.setTodayProfit(vo.getTodayProfitConfirmed());
-            vo.setProfitStatus(1);
-            vo.setProfitSource(PROFIT_SOURCE_YESTERDAY_NET_VALUE);
-
-            String currentNetValue = determineCurrentNetValue(fundData, postClose);
-            vo.setCurrentNetValue(currentNetValue);
-            if (currentNetValue != null && !currentNetValue.isEmpty()) {
-                BigDecimal confirmedNetValueBD = userFund.getConfirmedNetValue() != null ?
-                        userFund.getConfirmedNetValue() : new BigDecimal(currentNetValue);
-                BigDecimal currentValue = shareForToday.multiply(confirmedNetValueBD).setScale(2, RoundingMode.HALF_UP);
-                vo.setCurrentValue(currentValue);
-
-                BigDecimal cost = shareForToday.multiply(costPrice);
-                if (cost.compareTo(BigDecimal.ZERO) > 0) {
-                    BigDecimal profit = currentValue.subtract(cost);
-                    BigDecimal profitRate = profit.divide(cost, 4, RoundingMode.HALF_UP)
-                        .multiply(BigDecimal.valueOf(100));
-                    vo.setProfitRate(profitRate.setScale(2, RoundingMode.HALF_UP));
-                }
+            // 额外校验：确认净值应当与当前 unitNetValue 一致，否则是过早确认的
+            boolean confirmationValid = true;
+            if (userFund.getConfirmedNetValue() != null && fundData.getUnitNetValue() != null
+                && !fundData.getUnitNetValue().equals("null")) {
+                BigDecimal confirmedNV = userFund.getConfirmedNetValue();
+                BigDecimal currentNV = new BigDecimal(fundData.getUnitNetValue());
+                confirmationValid = confirmedNV.subtract(currentNV).abs()
+                    .compareTo(new BigDecimal("0.001")) < 0;
             }
-            return vo;
+
+            if (confirmationValid) {
+                vo.setTodayProfitConfirmed(userFund.getConfirmedProfit() != null ?
+                        userFund.getConfirmedProfit().setScale(2, RoundingMode.HALF_UP) :
+                        BigDecimal.ZERO);
+                vo.setTodayProfit(vo.getTodayProfitConfirmed());
+                vo.setProfitStatus(1);
+                vo.setProfitSource(PROFIT_SOURCE_YESTERDAY_NET_VALUE);
+
+                String currentNetValue = determineCurrentNetValue(fundData, postClose);
+                vo.setCurrentNetValue(currentNetValue);
+                if (currentNetValue != null && !currentNetValue.isEmpty()) {
+                    BigDecimal confirmedNetValueBD = userFund.getConfirmedNetValue() != null ?
+                            userFund.getConfirmedNetValue() : new BigDecimal(currentNetValue);
+                    BigDecimal currentValue = shareForToday.multiply(confirmedNetValueBD).setScale(2, RoundingMode.HALF_UP);
+                    vo.setCurrentValue(currentValue);
+
+                    BigDecimal cost = shareForToday.multiply(costPrice);
+                    if (cost.compareTo(BigDecimal.ZERO) > 0) {
+                        BigDecimal profit = currentValue.subtract(cost);
+                        BigDecimal profitRate = profit.divide(cost, 4, RoundingMode.HALF_UP)
+                            .multiply(BigDecimal.valueOf(100));
+                        vo.setProfitRate(profitRate.setScale(2, RoundingMode.HALF_UP));
+                    }
+                }
+                return vo;
+            }
+            // 确认无效：降级到正常逻辑，重新计算收益
         }
 
-        if (postClose) {
+        boolean netValueForToday = fundData.isNetValueForToday();
+        boolean netValueForYesterday = fundData.isNetValueForYesterday();
+
+        // 盘后且今天净值已发布：使用确认路径
+        if (postClose && netValueForToday) {
             String unitNetValue = fundData.getUnitNetValue();
             if (unitNetValue != null && !unitNetValue.isEmpty() && !unitNetValue.equals("null")) {
                 BigDecimal unitNetValueBD = new BigDecimal(unitNetValue);
@@ -298,6 +323,10 @@ public class FundHoldingService {
             }
         }
 
+        // 盘后但净值还没发布（净值日期是昨天或更早）：
+        // 1. 如果还有估算数据（gsz/gszzl 有效且非0），使用估算数据显示当日浮动收益
+        // 2. 如果估算数据已被天天基金清空，尝试使用今天交易时段缓存的估算数据
+        // 3. 都没有则不进入确认路径，交由下面的估算/默认逻辑处理
         String currentNetValue = determineCurrentNetValue(fundData, postClose);
         vo.setCurrentNetValue(currentNetValue);
 
@@ -324,13 +353,56 @@ public class FundHoldingService {
         BigDecimal currentValue = shareForToday.multiply(currentNetValueBD);
         vo.setCurrentValue(currentValue.setScale(2, RoundingMode.HALF_UP));
 
+        // ====== 估算数据缓存逻辑 ======
+        // 1. 判断 live 估算数据是否有效
+        boolean liveEstimateValid = fundData.getEstimatedChange() != null
+                && Math.abs(fundData.getEstimatedChange()) > 0.01;
+
+        // 2. 如果 live 数据无效，尝试用缓存数据回退（盘后场景尤其重要）
+        Double estimatedChangeForCalc = fundData.getEstimatedChange();
+        if (!liveEstimateValid && userFund != null && userFund.getCachedEstimatedChange() != null
+                && Math.abs(userFund.getCachedEstimatedChange()) > 0.01) {
+            estimatedChangeForCalc = userFund.getCachedEstimatedChange();
+            logger.info("盘后使用缓存估算数据: fundCode={}, cachedChange={}, cachedTime={}",
+                    fund.getFundCode(), estimatedChangeForCalc, userFund.getCachedEstimatedTime());
+            if (userFund.getCachedEstimatedNetValue() != null && !userFund.getCachedEstimatedNetValue().isEmpty()
+                    && !userFund.getCachedEstimatedNetValue().equals("null")) {
+                vo.setCurrentNetValue(userFund.getCachedEstimatedNetValue());
+                BigDecimal cachedNV = new BigDecimal(userFund.getCachedEstimatedNetValue());
+                currentValue = shareForToday.multiply(cachedNV);
+                vo.setCurrentValue(currentValue.setScale(2, RoundingMode.HALF_UP));
+            }
+            vo.setEstimatedNetValue(userFund.getCachedEstimatedNetValue());
+            vo.setEstimatedChange(estimatedChangeForCalc);
+            vo.setProfitSource("CACHED_ESTIMATE");
+        }
+
+        // 3. 有有效估算数据时（无论 live 还是缓存），写入缓存供后续使用
+        //    写入条件：今天 09:00-22:00 之间，估算数据有效
+        if (liveEstimateValid && isWithinCacheWindow()) {
+            UserFund uf = new UserFund();
+            uf.setUserId(userFund != null ? userFund.getUserId() : fund.getUserId());
+            uf.setFundCode(fund.getFundCode());
+            uf.setCachedEstimatedNetValue(fundData.getEstimatedNetValue());
+            uf.setCachedEstimatedChange(fundData.getEstimatedChange());
+            uf.setCachedEstimatedTime(new Date());
+            try {
+                userFundMapper.updateCachedEstimate(uf);
+            } catch (Exception e) {
+                logger.debug("保存估算缓存失败: fundCode={}, error={}", fund.getFundCode(), e.getMessage());
+            }
+        }
+
         // 优先使用估算涨幅计算当日收益，确保实时更新
         BigDecimal todayProfit;
         String profitSource;
-        
+
         // 使用估算涨幅计算当日收益
-        todayProfit = calculateProfitByChangePercent(currentValue, fundData.getEstimatedChange());
-        profitSource = PROFIT_SOURCE_CHANGEPCT;
+        todayProfit = calculateProfitByChangePercent(currentValue, estimatedChangeForCalc);
+        profitSource = vo.getProfitSource();
+        if (profitSource == null || profitSource.isEmpty()) {
+            profitSource = PROFIT_SOURCE_CHANGEPCT;
+        }
 
         vo.setTodayProfit(todayProfit.setScale(2, RoundingMode.HALF_UP));
         vo.setProfitSource(profitSource);

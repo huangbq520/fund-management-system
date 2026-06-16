@@ -23,6 +23,12 @@ public class UserFund {
     private BigDecimal confirmedNetValue;
     private BigDecimal confirmedProfit;
     private Date lastSyncTime;
+
+    // 估算数据缓存：交易时段保存，盘后天天基金清空时用
+    private String cachedEstimatedNetValue;
+    private Double cachedEstimatedChange;
+    private Date cachedEstimatedTime;
+
     private Date createTime;
     private Date updateTime;
 }

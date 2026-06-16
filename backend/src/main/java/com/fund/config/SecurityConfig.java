@@ -11,6 +11,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import com.fund.config.JwtAuthenticationFilter;
 
 @Configuration
 @EnableWebSecurity
@@ -39,6 +40,7 @@ public class SecurityConfig {
                 .antMatchers("/api/fund/data").permitAll()
                 .antMatchers("/api/fund/performance").permitAll()
                 .antMatchers("/api/fund/**").authenticated()
+                .antMatchers("/api/watchlist/**").authenticated()
                 .anyRequest().permitAll()
             .and()
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

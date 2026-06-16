@@ -329,10 +329,12 @@ const buildMainOption = (dates, ohlc, yMin, yMax, yPad) => ({
     axisLabel: { color: '#94a3b8', fontSize: 10, formatter: v => v.toFixed(0) }
   },
   dataZoom: [
-    { type: 'inside', xAxisIndex: 0, start: 0, end: 100 },
+    { type: 'inside', xAxisIndex: 0, start: 0, end: 100,
+      zoomOnMouseWheel: false, throttle: 200 },
     { type: 'slider', xAxisIndex: 0, start: 0, end: 100, bottom: '2%', height: 18,
       borderColor: '#e2e8f0', fillerColor: 'rgba(22,119,255,0.1)',
-      handleStyle: { color: '#1677ff' }, textStyle: { fontSize: 10, color: '#94a3b8' } }
+      handleStyle: { color: '#1677ff' }, textStyle: { fontSize: 10, color: '#94a3b8' },
+      realtime: false }
   ],
   tooltip: {
     trigger: 'axis',
@@ -394,8 +396,10 @@ const buildVolOption = (dates, volumes, volMax) => ({
     }}
   },
   dataZoom: [
-    { type: 'inside', xAxisIndex: 0, start: 0, end: 100 },
-    { type: 'slider', show: false, xAxisIndex: 0, start: 0, end: 100 }
+    { type: 'inside', xAxisIndex: 0, start: 0, end: 100,
+      zoomOnMouseWheel: false, throttle: 200 },
+    { type: 'slider', show: false, xAxisIndex: 0, start: 0, end: 100,
+      realtime: false }
   ],
   series: [{
     type: 'bar',
@@ -452,28 +456,34 @@ const renderCharts = () => {
   mainChart.setOption(mainOption)
   volChart.setOption(volOption)
 
-  // --- 联动 dataZoom ---
+  // --- 联动 dataZoom（加锁 + 节流，避免回环卡顿） ---
+  let _isSyncingZoom = false
+  let _zoomSyncTimer = null
   mainZoomHandler = (params) => {
-    if (volChart && !volChart.isDisposed()) {
-      volChart.dispatchAction({
-        type: 'dataZoom',
-        dataZoomIndex: 0,
-        start: params.start != null ? params.start : mainChart.getOption().dataZoom[0].start,
-        end: params.end != null ? params.end : mainChart.getOption().dataZoom[0].end
-      })
-    }
+    if (_isSyncingZoom || !volChart || volChart.isDisposed()) return
+    _isSyncingZoom = true
+    if (_zoomSyncTimer) clearTimeout(_zoomSyncTimer)
+    volChart.dispatchAction({
+      type: 'dataZoom',
+      dataZoomIndex: 0,
+      start: params.start != null ? params.start : mainChart.getOption().dataZoom[0].start,
+      end: params.end != null ? params.end : mainChart.getOption().dataZoom[0].end
+    })
+    _zoomSyncTimer = setTimeout(() => { _isSyncingZoom = false }, 100)
   }
   mainChart.on('dataZoom', mainZoomHandler)
 
   volZoomHandler = (params) => {
-    if (mainChart && !mainChart.isDisposed()) {
-      mainChart.dispatchAction({
-        type: 'dataZoom',
-        dataZoomIndex: 0,
-        start: params.start != null ? params.start : volChart.getOption().dataZoom[0].start,
-        end: params.end != null ? params.end : volChart.getOption().dataZoom[0].end
-      })
-    }
+    if (_isSyncingZoom || !mainChart || mainChart.isDisposed()) return
+    _isSyncingZoom = true
+    if (_zoomSyncTimer) clearTimeout(_zoomSyncTimer)
+    mainChart.dispatchAction({
+      type: 'dataZoom',
+      dataZoomIndex: 0,
+      start: params.start != null ? params.start : volChart.getOption().dataZoom[0].start,
+      end: params.end != null ? params.end : volChart.getOption().dataZoom[0].end
+    })
+    _zoomSyncTimer = setTimeout(() => { _isSyncingZoom = false }, 100)
   }
   volChart.on('dataZoom', volZoomHandler)
 

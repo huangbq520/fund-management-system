@@ -6,6 +6,7 @@ import com.fund.mapper.FundDailyProfitMapper;
 import com.fund.mapper.UserFundMapper;
 import com.fund.vo.DailyProfitVO;
 import com.fund.vo.FundData;
+import com.fund.service.FundDataService;
 import com.fund.vo.FundHistoryTrend;
 import com.fund.vo.OverallDailyProfitVO;
 import org.slf4j.Logger;

@@ -55,12 +55,15 @@
 
     <!-- Selected Fund Preview -->
     <div v-if="selectedFund && !showDropdown" class="selected-preview">
-      <div class="preview-info">
+      <div class="preview-row preview-info-row">
         <span class="preview-name">{{ selectedFund.fundName }}</span>
         <span class="preview-code">{{ selectedFund.fundCode }}</span>
       </div>
-      <button @click="handleAdd" class="add-btn">添加</button>
-      <button @click="clearSelection" class="clear-btn">清除</button>
+      <div class="preview-row preview-actions-row">
+        <button @click="handleAdd" class="add-btn">添加持仓</button>
+        <button @click="handleAddToWatchlist" class="watchlist-btn">加入自选</button>
+        <button @click="clearSelection" class="clear-btn">清除</button>
+      </div>
     </div>
 
     <OcrModal :visible="showOcrModal" @close="showOcrModal = false" @select-fund="handleOcrSelect" @batch-added="handleBatchAdded" />
@@ -70,6 +73,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useFundStore } from '../stores/fundStore'
+import { useWatchlistStore } from '../stores/watchlistStore'
 import { storeToRefs } from 'pinia'
 import { useToast } from '../composables/useToast'
 import OcrModal from './OcrModal.vue'
@@ -81,7 +85,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['add-fund'])
+const emit = defineEmits(['add-fund', 'add-to-watchlist'])
 
 const fundStore = useFundStore()
 const { searchResults } = storeToRefs(fundStore)
@@ -195,6 +199,8 @@ const clearSelection = () => {
   isExpanded.value = false
 }
 
+const watchlistStore = useWatchlistStore()
+
 const handleAdd = async () => {
   if (!selectedFund.value) return
 
@@ -204,7 +210,7 @@ const handleAdd = async () => {
       selectedFund.value.fundName
     )
     if (response.code === 200) {
-      toast.success('添加成功！')
+      toast.success('添加持仓成功！')
       clearSelection()
       emit('add-fund')
     } else {
@@ -212,6 +218,27 @@ const handleAdd = async () => {
     }
   } catch (err) {
     toast.error('添加失败，请稍后重试')
+    console.error(err)
+  }
+}
+
+const handleAddToWatchlist = async () => {
+  if (!selectedFund.value) return
+
+  try {
+    const response = await watchlistStore.addToWatchlist(
+      selectedFund.value.fundCode,
+      selectedFund.value.fundName
+    )
+    if (response.code === 200) {
+      toast.success('已加入自选！')
+      clearSelection()
+      emit('add-to-watchlist')
+    } else {
+      toast.error(response.message || '加入自选失败')
+    }
+  } catch (err) {
+    toast.error('加入自选失败，请稍后重试')
     console.error(err)
   }
 }
@@ -486,8 +513,8 @@ onUnmounted(() => {
   background: linear-gradient(135deg, #f8f9ff 0%, #f0f4ff 100%);
   border-radius: 12px;
   display: flex;
-  align-items: center;
-  gap: 16px;
+  flex-direction: column;
+  gap: 14px;
   border: 1px solid #e8f0ff;
 }
 
@@ -502,11 +529,20 @@ onUnmounted(() => {
   z-index: 999;
 }
 
-.preview-info {
-  flex: 1;
+.preview-row {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.preview-info-row {
+  flex-wrap: wrap;
+}
+
+.preview-actions-row {
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
 }
 
 .preview-name {
@@ -539,6 +575,24 @@ onUnmounted(() => {
 .add-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.watchlist-btn {
+  padding: 10px 18px;
+  background: linear-gradient(135deg, #52c41a 0%, #73d13d 100%);
+  color: white;
+  border: none;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: 0 2px 8px rgba(82, 196, 26, 0.3);
+}
+
+.watchlist-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(82, 196, 26, 0.4);
 }
 
 .clear-btn {

@@ -69,3 +69,28 @@ CREATE TABLE IF NOT EXISTS `fund_daily_profit` (
     INDEX `idx_user_fund` (`user_id`, `fund_code`),
     INDEX `idx_record_date` (`record_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='基金每日收益统计表';
+
+-- 自选分组表
+CREATE TABLE IF NOT EXISTS `watchlist_group` (
+    `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
+    `user_id` BIGINT NOT NULL COMMENT '用户ID',
+    `group_name` VARCHAR(50) NOT NULL COMMENT '分组名称',
+    `sort_order` INT NOT NULL DEFAULT 0 COMMENT '排序权重',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    INDEX `idx_wg_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='自选分组表';
+
+-- 用户自选表
+CREATE TABLE IF NOT EXISTS `user_watchlist` (
+    `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
+    `user_id` BIGINT NOT NULL COMMENT '用户ID',
+    `fund_code` VARCHAR(10) NOT NULL COMMENT '基金代码',
+    `fund_name` VARCHAR(100) NOT NULL COMMENT '基金名称',
+    `group_id` BIGINT NULL COMMENT '分组ID，NULL表示未分组',
+    `add_net_value` DECIMAL(10, 4) NULL COMMENT '加入时的净值（用于计算自选以来收益）',
+    `add_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '加入自选的时间',
+    `sort_order` INT NOT NULL DEFAULT 0 COMMENT '排序权重，越大越靠前',
+    `notes` VARCHAR(200) NULL COMMENT '用户备注',
+    UNIQUE KEY `uk_uw_user_fund` (`user_id`, `fund_code`),
+    INDEX `idx_uw_user_group` (`user_id`, `group_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户自选表';

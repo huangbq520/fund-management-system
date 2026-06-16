@@ -54,6 +54,17 @@ public interface UserFundMapper {
     @Update("UPDATE user_fund SET hold_amount = #{holdAmount}, update_time = NOW() WHERE fund_code = #{fundCode}")
     int updateHoldAmount(@Param("fundCode") String fundCode, @Param("holdAmount") BigDecimal holdAmount);
 
+    // 保存估算数据缓存（用于盘后天天基金已清空估算数据时回退）
+    @Update("UPDATE user_fund SET cached_estimated_net_value = #{cachedEstimatedNetValue}, " +
+            "cached_estimated_change = #{cachedEstimatedChange}, cached_estimated_time = #{cachedEstimatedTime}, " +
+            "update_time = NOW() WHERE user_id = #{userId} AND fund_code = #{fundCode}")
+    int updateCachedEstimate(UserFund userFund);
+
+    // 清空估算数据缓存（每日开盘前调用）
+    @Update("UPDATE user_fund SET cached_estimated_net_value = NULL, " +
+            "cached_estimated_change = NULL, cached_estimated_time = NULL WHERE fund_code = #{fundCode}")
+    int clearCachedEstimate(@Param("fundCode") String fundCode);
+
     @Delete("DELETE FROM user_fund WHERE user_id = #{userId} AND fund_code = #{fundCode}")
     int deleteByUserIdAndFundCode(@Param("userId") Long userId, @Param("fundCode") String fundCode);
 

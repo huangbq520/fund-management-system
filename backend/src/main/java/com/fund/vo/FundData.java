@@ -43,11 +43,42 @@ public class FundData {
     private Double sixMonthChange;
     private Double oneYearChange;
 
-    // 最新净值对应的日期
+    // 最新净值对应的日期（MM-dd 格式，用于显示）
     private String latestNetValueDate;
 
+    // 最新净值对应的完整日期（yyyy-MM-dd 格式，用于日期比对判断）
+    private String netValueDate;
+
+    // 确认净值日期是否为今天
+    public boolean isNetValueForToday() {
+        if (netValueDate == null || netValueDate.isEmpty()) {
+            return false;
+        }
+        try {
+            java.time.LocalDate nvDate = java.time.LocalDate.parse(netValueDate);
+            java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"));
+            return nvDate.equals(today);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // 确认净值日期是否为昨天
+    public boolean isNetValueForYesterday() {
+        if (netValueDate == null || netValueDate.isEmpty()) {
+            return false;
+        }
+        try {
+            java.time.LocalDate nvDate = java.time.LocalDate.parse(netValueDate);
+            java.time.LocalDate yesterday = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).minusDays(1);
+            return nvDate.equals(yesterday);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     public String getJzrq() {
-        return "";
+        return netValueDate != null ? netValueDate : "";
     }
 
     public boolean isUseEstimatedValue() {

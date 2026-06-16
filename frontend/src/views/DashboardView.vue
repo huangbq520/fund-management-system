@@ -20,7 +20,7 @@
       <h1>酱菜养基</h1>
     </div>
     <div class="header-search">
-      <SearchFund @add-fund="handleAddFund" :compact="true" />
+      <SearchFund @add-fund="handleAddFund" @add-to-watchlist="handleAddToWatchlist" :compact="true" />
     </div>
     <div class="header-actions">
       <a
@@ -48,8 +48,23 @@
     </section>
 
     <section class="list-section">
+      <div class="tab-bar">
+        <button
+          :class="['tab-btn', { active: activeTab === 'holdings' }]"
+          @click="activeTab = 'holdings'"
+        >我的持仓</button>
+        <button
+          :class="['tab-btn', { active: activeTab === 'watchlist' }]"
+          @click="switchToWatchlist"
+        >自选</button>
+      </div>
       <HoldingList
+        v-if="activeTab === 'holdings'"
         @update="handleHoldingUpdate"
+        @view-detail="handleViewDetail"
+      />
+      <WatchlistTable
+        v-if="activeTab === 'watchlist'"
         @view-detail="handleViewDetail"
       />
     </section>
@@ -79,19 +94,24 @@ import MarketIndex from '../components/MarketIndex.vue'
 import SearchFund from '../components/SearchFund.vue'
 import PortfolioSummary from '../components/PortfolioSummary.vue'
 import HoldingList from '../components/HoldingList.vue'
+import WatchlistTable from '../components/WatchlistTable.vue'
 import FundDetailModal from '../components/FundDetailModal.vue'
 import IndexQuoteModal from '../components/IndexQuoteModal.vue'
 import UserMenu from '../components/UserMenu.vue'
 import SiteFooter from '../components/SiteFooter.vue'
 import { useFundStore } from '../stores/fundStore'
+import { useWatchlistStore } from '../stores/watchlistStore'
 
 const router = useRouter()
 const route = useRoute()
 const fundStore = useFundStore()
+const watchlistStore = useWatchlistStore()
 
 const showDetail = computed(() => !!route.params.fundCode)
 const currentFundCode = computed(() => route.params.fundCode || '')
 const quoteIndex = ref(null)
+const activeTab = ref('holdings')
+const hasLoadedWatchlist = ref(false)
 
 const openQuote = (index) => {
   quoteIndex.value = index
@@ -103,6 +123,20 @@ const closeQuote = () => {
 
 const handleAddFund = async (fundCode, fundName) => {
   await fundStore.addFund(fundCode, fundName)
+}
+
+const handleAddToWatchlist = async () => {
+  await watchlistStore.fetchItems()
+  await watchlistStore.fetchGroups()
+}
+
+const switchToWatchlist = async () => {
+  activeTab.value = 'watchlist'
+  if (!hasLoadedWatchlist.value) {
+    hasLoadedWatchlist.value = true
+    await watchlistStore.fetchItems()
+    await watchlistStore.fetchGroups()
+  }
 }
 
 const handleHoldingUpdate = () => {
@@ -365,5 +399,34 @@ const closeDetail = () => {
 
 .list-section {
   margin-bottom: 20px;
+}
+
+.tab-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.tab-btn {
+  padding: 8px 20px;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  color: #666;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tab-btn:hover {
+  border-color: #1677ff;
+  color: #1677ff;
+}
+
+.tab-btn.active {
+  background: #1677ff;
+  border-color: #1677ff;
+  color: #fff;
 }
 </style>

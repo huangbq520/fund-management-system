@@ -55,7 +55,7 @@
             <tr>
               <th>日期</th>
               <th>净值</th>
-              <th>日涨幅</th>
+              <th class="col-change">日涨幅</th>
             </tr>
           </thead>
           <tbody>

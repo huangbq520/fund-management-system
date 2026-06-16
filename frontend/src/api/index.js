@@ -109,4 +109,6 @@ export const ocrApi = {
   }
 }
 
+export { watchlistApi } from './watchlist'
+
 export default api
