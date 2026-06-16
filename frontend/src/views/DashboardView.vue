@@ -139,9 +139,9 @@ const switchToWatchlist = async () => {
   }
 }
 
+// 持仓操作后 store 已自行更新，这里做兜底（如手动刷新按钮触发）
 const handleHoldingUpdate = () => {
   fundStore.fetchHoldings()
-  fundStore.fetchSummary()
 }
 
 const handleViewDetail = (fundCode) => {

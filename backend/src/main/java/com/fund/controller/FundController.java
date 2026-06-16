@@ -176,7 +176,7 @@ public class FundController {
     }
 
     @PostMapping("/add")
-    public ApiResponse<Map<String, Object>> addFund(@RequestBody Map<String, String> request, HttpServletRequest httpRequest) {
+    public ApiResponse<FundHoldingVO> addFund(@RequestBody Map<String, String> request, HttpServletRequest httpRequest) {
         Long userId = getUserId(httpRequest);
         String fundCode = request.get("fundCode");
         String fundName = request.get("fundName");
@@ -207,10 +207,9 @@ public class FundController {
             userFund.setCostPrice(BigDecimal.ZERO);
             userFundMapper.insert(userFund);
 
-            Map<String, Object> result = new HashMap<>();
-            result.put("fundCode", fundCode);
-            result.put("fundName", fundName);
-            return ApiResponse.success(result);
+            // 直接返回完整的持仓 VO，前端无需再次请求
+            FundHoldingVO vo = fundHoldingService.getSingleHolding(userId, fundCode);
+            return ApiResponse.success(vo);
         } catch (Exception e) {
             logger.error("添加基金失败: fundCode={}, error={}", fundCode, e.getMessage());
             return ApiResponse.error("添加基金失败: " + e.getMessage());

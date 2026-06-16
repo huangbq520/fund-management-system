@@ -385,7 +385,8 @@ const handleSubmit = async () => {
     }
 
     if (response.code === 200) {
-      if (response.data && scene.value !== 'sell') {
+      // 所有操作（编辑/加仓/减仓）后端都返回完整的 FundHoldingVO
+      if (response.data) {
         fundStore.updateHoldingInPlace(props.holding.fundCode, response.data)
       } else {
         fundStore.silentFetchHoldings()

@@ -26,6 +26,7 @@ export const useFundStore = defineStore('fund', () => {
       const response = await fundApi.getHoldingList()
       if (response.code === 200) {
         holdings.value = response.data || []
+        recalcSummary()  // 从最新持仓数据本地计算汇总，不再单独调 /portfolio/summary
       }
     } catch (err) {
       console.error('Failed to load holdings:', err)
@@ -34,6 +35,7 @@ export const useFundStore = defineStore('fund', () => {
     }
   }
 
+  // fetchSummary 保留供需要服务端精确汇总的场景（如初始加载），但日常操作依赖 recalcSummary
   async function fetchSummary() {
     loading.summary = true
     try {
@@ -75,11 +77,47 @@ export const useFundStore = defineStore('fund', () => {
     }
   }
 
+  /**
+   * 原地合并持仓数据：对比新旧数据，只更新变化的属性
+   * 避免全量替换数组导致 Vue 重新渲染所有行
+   */
+  function mergeHoldingsInPlace(newData) {
+    const oldMap = new Map(holdings.value.map(h => [h.fundCode, h]))
+    const newCodes = new Set(newData.map(h => h.fundCode))
+
+    // 1. 更新已存在的项（原地修改属性，只触发变化行的重渲染）
+    for (const item of newData) {
+      const old = oldMap.get(item.fundCode)
+      if (old) {
+        for (const key of Object.keys(item)) {
+          if (old[key] !== item[key]) {
+            old[key] = item[key]
+          }
+        }
+      }
+    }
+
+    // 2. 移除已不存在的项
+    for (let i = holdings.value.length - 1; i >= 0; i--) {
+      if (!newCodes.has(holdings.value[i].fundCode)) {
+        holdings.value.splice(i, 1)
+      }
+    }
+
+    // 3. 添加新项
+    for (const item of newData) {
+      if (!oldMap.has(item.fundCode)) {
+        holdings.value.push(item)
+      }
+    }
+  }
+
   async function silentFetchHoldings() {
     try {
       const response = await fundApi.getHoldingList()
       if (response.code === 200) {
-        holdings.value = response.data || []
+        mergeHoldingsInPlace(response.data || [])
+        recalcSummary()
       }
     } catch (err) {
       console.error('Failed to load holdings:', err)
@@ -90,7 +128,13 @@ export const useFundStore = defineStore('fund', () => {
     try {
       const response = await fundApi.getPortfolioSummary()
       if (response.code === 200 && response.data) {
-        summary.value = response.data
+        // 只更新变化的字段，避免不必要的渲染
+        const newData = response.data
+        for (const key of Object.keys(newData)) {
+          if (summary.value[key] !== newData[key]) {
+            summary.value[key] = newData[key]
+          }
+        }
       }
     } catch (err) {
       console.error('Failed to load portfolio summary:', err)
@@ -143,9 +187,10 @@ export const useFundStore = defineStore('fund', () => {
 
   async function addFund(fundCode, fundName) {
     const response = await fundApi.add(fundCode, fundName)
-    if (response.code === 200) {
-      await fetchHoldings()
-      await fetchSummary()
+    if (response.code === 200 && response.data) {
+      // 后端直接返回完整 FundHoldingVO，本地追加，不再请求全量列表
+      holdings.value.push(response.data)
+      recalcSummary()
     }
     return response
   }
@@ -153,8 +198,8 @@ export const useFundStore = defineStore('fund', () => {
   async function addFundBatch(funds) {
     const response = await fundApi.addBatch(funds)
     if (response.code === 200) {
-      await fetchHoldings()
-      await fetchSummary()
+      await fetchHoldings()  // 批量操作结果复杂，仍全量刷新（但 Redis 缓存使其很快）
+      // fetchHoldings 内部已调用 recalcSummary，无需再调 fetchSummary
     }
     return response
   }
@@ -162,8 +207,10 @@ export const useFundStore = defineStore('fund', () => {
   async function deleteBatch(fundCodes) {
     const response = await fundApi.deleteBatch(fundCodes)
     if (response.code === 200) {
-      await fetchHoldings()
-      await fetchSummary()
+      // 本地移除已删除的基金，不再请求全量列表
+      const codesSet = new Set(fundCodes)
+      holdings.value = holdings.value.filter(h => !codesSet.has(h.fundCode))
+      recalcSummary()
     }
     return response
   }

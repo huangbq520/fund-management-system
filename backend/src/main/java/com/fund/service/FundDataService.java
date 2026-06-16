@@ -1,5 +1,6 @@
 package com.fund.service;
 
+import com.alibaba.fastjson2.JSON;
 import com.fund.util.HttpUtil;
 import com.fund.vo.CompareIndex;
 import com.fund.vo.FundData;
@@ -12,11 +13,16 @@ import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.math.BigDecimal;
 import java.text.SimpleDateFormat;
+import java.time.DayOfWeek;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
@@ -34,15 +40,63 @@ public class FundDataService {
 
     private static final String TIANTIAN_FUND_URL = "https://fundgz.1234567.com.cn/js/%s.js?rt=%d";
     private static final String EASTMONEY_HOLDINGS_URL = "https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code=%s&topline=10&year=&month=&rt=%d";
-    private static final String TENCENT_STOCK_URL = "https://qt.gtimg.cn/q=%s";
+    private static final String TENCENT_STOCK_URL = "https://qt.gtimg.cn/q/%s";
     private static final String EASTMONEY_TREND_URL = "https://fund.eastmoney.com/pingzhongdata/%s.js?v=%d";
+
+    private static final String FUND_DATA_CACHE_KEY = "fund:data:";
+    private static final int CACHE_TTL_TRADING_SEC = 60;        // 交易时段：60 秒
+    private static final int CACHE_TTL_NON_TRADING_SEC = 1200;  // 非交易时段：20 分钟
+
+    private static final ZoneId BEIJING_ZONE = ZoneId.of("Asia/Shanghai");
 
     private final ExecutorService executorService = Executors.newCachedThreadPool();
 
     @Resource
     private HttpUtil httpUtil;
 
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
+
+    /**
+     * 判断是否处于交易时段（周一至周五 9:00-16:00）
+     * 使用较宽窗口覆盖盘前和盘后结算期
+     */
+    private boolean isDuringTradingHours() {
+        try {
+            ZonedDateTime now = ZonedDateTime.now(BEIJING_ZONE);
+            DayOfWeek dayOfWeek = now.getDayOfWeek();
+            if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) {
+                return false;
+            }
+            LocalTime time = now.toLocalTime();
+            return !time.isBefore(LocalTime.of(9, 0)) && !time.isAfter(LocalTime.of(16, 0));
+        } catch (Exception e) {
+            return true; // 异常时按交易时段处理，使用较短 TTL 保证数据新鲜度
+        }
+    }
+
+    private int getCacheTtlSeconds() {
+        return isDuringTradingHours() ? CACHE_TTL_TRADING_SEC : CACHE_TTL_NON_TRADING_SEC;
+    }
+
     public FundData getFundData(String fundCode) {
+        // 1. 先从 Redis 缓存读取
+        String cacheKey = FUND_DATA_CACHE_KEY + fundCode;
+        try {
+            String cached = stringRedisTemplate.opsForValue().get(cacheKey);
+            if (cached != null && !cached.isEmpty()) {
+                FundData fundData = JSON.parseObject(cached, FundData.class);
+                if (fundData != null && fundData.getFundCode() != null) {
+                    logger.debug("命中基金数据缓存: fundCode={}", fundCode);
+                    return fundData;
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Redis 读取基金数据缓存异常: fundCode={}, error={}", fundCode, e.getMessage());
+        }
+
+        // 2. 缓存未命中，从外部 API 获取
+        logger.info("缓存未命中，从外部 API 获取基金数据: fundCode={}", fundCode);
         FundData fundData = new FundData();
         fundData.setFundCode(fundCode);
 
@@ -53,6 +107,16 @@ public class FundDataService {
         } catch (Exception e) {
             logger.error("获取基金数据异常: fundCode={}, error={}", fundCode, e.getMessage());
             fundData.getErrorMessages().add("获取基金数据异常: " + e.getMessage());
+        }
+
+        // 3. 写入 Redis 缓存
+        try {
+            int ttl = getCacheTtlSeconds();
+            String json = JSON.toJSONString(fundData);
+            stringRedisTemplate.opsForValue().set(cacheKey, json, ttl, TimeUnit.SECONDS);
+            logger.debug("基金数据已缓存: fundCode={}, ttl={}s", fundCode, ttl);
+        } catch (Exception e) {
+            logger.warn("Redis 缓存基金数据失败: fundCode={}, error={}", fundCode, e.getMessage());
         }
 
         return fundData;

@@ -221,7 +221,7 @@ useAutoRefresh(() => fundStore.silentFetchHoldings(), 30000, isTradingHours)
 
 const refreshList = () => {
   fundStore.fetchHoldings()
-  emit('update')
+  // fetchHoldings 内部已调用 recalcSummary，无需 emit
 }
 
 const editHolding = (holding) => {
@@ -238,10 +238,9 @@ const closeEditModal = () => {
   selectedHolding.value = null
 }
 
-const handleUpdateHolding = async () => {
+const handleUpdateHolding = () => {
+  // updateHoldingInPlace 已更新 store 中的持仓数据 + 重新计算 summary，无需再请求
   closeEditModal()
-  await fundStore.fetchHoldings()
-  emit('update')
 }
 
 const formatEstimateTime = (timeStr) => {
@@ -354,11 +353,9 @@ const handleBatchDelete = async () => {
     console.log('删除接口响应:', response)
     
     if (response.code === 200) {
-      console.log('删除成功，刷新列表')
+      console.log('删除成功')
       cancelBatchDelete()
-      await fundStore.fetchHoldings()
-      await fundStore.fetchSummary()
-      emit('update')
+      // deleteBatch 已在 store 中本地移除 + recalcSummary，无需再请求
       alert('删除成功')
     } else {
       alert(response.message || '删除失败')
